@@ -1,0 +1,11 @@
+{
+	"id": "obsidian-ai-transcriber",
+	"name": "Obsidian AI Transcriber",
+	"version": "0.0.1",
+	"minAppVersion": "0.15.0",
+	"description": "Transcribe audio recordings to Markdown notes",
+	"author": "paladinllq",
+	"authorUrl": "https://obsidian.md",
+	"fundingUrl": "https://obsidian.md/pricing",
+	"isDesktopOnly": false
+}
