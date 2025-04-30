@@ -89,8 +89,23 @@ export default class RecordModal extends Modal {
 				new Notice('Transcribing audio…');
 				const transcript = await this.plugin.transcriber.transcribe(result.blob, this.plugin.settings.transcriber);
 				const transcriptDir = this.plugin.settings.transcriber.transcriptDir;
-				const transcriptPath = await this.fileService.saveText(transcript, transcriptDir);
-				new Notice(`Transcript saved to ${transcriptPath}`);
+				// Handle transcript saving and optional editing
+				const dir = transcriptDir;
+				if (this.plugin.settings.editor.enabled) {
+					if (this.plugin.settings.editor.keepOriginal) {
+						const rawPath = await this.fileService.saveText(transcript, dir);
+						new Notice(`Transcript saved to ${rawPath}`);
+					}
+					new Notice('Editing transcript…');
+					const edited = await this.plugin.editorService.edit(transcript, this.plugin.settings.editor);
+					const editedPath = await this.fileService.saveText(edited, dir);
+					new Notice(`Edited transcript saved to ${editedPath}`);
+					await this.fileService.openFile(editedPath);
+				} else {
+					const transcriptPath = await this.fileService.saveText(transcript, dir);
+					new Notice(`Transcript saved to ${transcriptPath}`);
+					await this.fileService.openFile(transcriptPath);
+				}
 			} catch (error: any) {
 				new Notice(`Error: ${error.message}`);
 				console.error(error);

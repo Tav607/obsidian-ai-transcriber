@@ -1,4 +1,4 @@
-import { App, normalizePath } from 'obsidian';
+import { App, normalizePath, TFile } from 'obsidian';
 
 export class FileService {
 	private app: App;
@@ -41,5 +41,13 @@ export class FileService {
 		// Create text file in vault
 		await this.app.vault.create(path, text);
 		return path;
+	}
+
+	// Add a method to open a file in the workspace
+	async openFile(path: string): Promise<void> {
+		const file = this.app.vault.getAbstractFileByPath(path);
+		if (file instanceof TFile) {
+			await this.app.workspace.getLeaf(true).openFile(file);
+		}
 	}
 } 
