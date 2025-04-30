@@ -1,15 +1,23 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 import RecordModal from './src/ui/recordModal';
+import { RecorderService } from './src/services/recorder';
 import SettingsTab from './src/settings/settingsTab';
 import { PluginSettings, DEFAULT_SETTINGS } from './src/settings/types';
+import { TranscriberService } from './src/services/transcriber';
 
 // Remember to rename these classes and interfaces!
 
 export default class ObsidianAITranscriber extends Plugin {
 	settings: PluginSettings;
+	recorder: RecorderService;
+	transcriber: TranscriberService;
 
 	async onload() {
 		await this.loadSettings();
+		// Initialize RecorderService so state persists across modals
+		this.recorder = new RecorderService();
+		// Initialize TranscriberService
+		this.transcriber = new TranscriberService();
 
 		// Ribbon button for non-streaming recording
 		const ribbonIconEl = this.addRibbonIcon('microphone', 'Record Audio', () => {

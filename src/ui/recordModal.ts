@@ -7,13 +7,17 @@ export default class RecordModal extends Modal {
 	private plugin: ObsidianAITranscriber;
 	private recorder: RecorderService;
 	private fileService: FileService;
-	private recordPromise: Promise<RecordingResult>;
 	private isPaused = false;
+	private timerEl: HTMLElement;
+	private intervalId: number;
+	private recordBtn: HTMLElement;
+	private pauseBtn: HTMLElement;
+	private stopBtn: HTMLElement;
 
 	constructor(app: App, plugin: ObsidianAITranscriber) {
 		super(app);
 		this.plugin = plugin;
-		this.recorder = new RecorderService();
+		this.recorder = plugin.recorder;
 		this.fileService = new FileService(this.app);
 	}
 
@@ -22,49 +26,102 @@ export default class RecordModal extends Modal {
 		contentEl.empty();
 		contentEl.createEl('h2', { text: 'Record Audio (Non-Streaming)' });
 
-		const buttonContainer = contentEl.createDiv({ cls: 'button-container' });
-		const recordBtn = buttonContainer.createEl('button', { text: 'Record' });
-		const pauseBtn = buttonContainer.createEl('button', { text: 'Pause' });
-		pauseBtn.setAttr('disabled', 'true');
-		const stopBtn = buttonContainer.createEl('button', { text: 'Stop' });
-		stopBtn.setAttr('disabled', 'true');
+		// Elapsed time display
+		this.timerEl = contentEl.createEl('div', { cls: 'recorder-timer', text: '00:00' });
 
-		recordBtn.onclick = async () => {
-			recordBtn.setAttr('disabled', 'true');
-			pauseBtn.removeAttribute('disabled');
-			stopBtn.removeAttribute('disabled');
-			this.recordPromise = this.recorder.start();
-			new Notice('Recording started');
+		const buttonContainer = contentEl.createDiv({ cls: 'button-container' });
+		this.recordBtn = buttonContainer.createEl('button', { text: 'Record' });
+		this.pauseBtn = buttonContainer.createEl('button', { text: 'Pause' });
+		this.pauseBtn.setAttr('disabled', 'true');
+		this.stopBtn = buttonContainer.createEl('button', { text: 'Stop' });
+		this.stopBtn.setAttr('disabled', 'true');
+
+		// Initialize UI and timer
+		this.updateUI();
+		this.intervalId = window.setInterval(() => {
+			const elapsed = this.recorder.getElapsed();
+			this.timerEl.setText(this.formatTime(elapsed));
+		}, 500);
+
+		this.recordBtn.onclick = async () => {
+			try {
+				// Start recording
+				await this.recorder.start();
+				new Notice('Recording started');
+				// Manually update button states immediately
+				this.recordBtn.setAttr('disabled', 'true');
+				this.pauseBtn.removeAttribute('disabled');
+				this.stopBtn.removeAttribute('disabled');
+				this.pauseBtn.setText('Pause');
+				this.isPaused = false;
+			} catch (error: any) {
+				new Notice(`Error starting recording: ${error.message}`);
+				console.error(error);
+			}
 		};
 
-		pauseBtn.onclick = () => {
+		this.pauseBtn.onclick = () => {
 			if (!this.isPaused) {
 				this.recorder.pause();
-				pauseBtn.setText('Resume');
+				this.pauseBtn.setText('Resume');
 				this.isPaused = true;
 				new Notice('Recording paused');
 			} else {
 				this.recorder.resume();
-				pauseBtn.setText('Pause');
+				this.pauseBtn.setText('Pause');
 				this.isPaused = false;
 				new Notice('Recording resumed');
 			}
 		};
 
-		stopBtn.onclick = async () => {
-			stopBtn.setAttr('disabled', 'true');
-			pauseBtn.setAttr('disabled', 'true');
+		this.stopBtn.onclick = async () => {
+			this.stopBtn.setAttr('disabled', 'true');
+			this.pauseBtn.setAttr('disabled', 'true');
 			new Notice('Stopping recording…');
-			const result = await this.recorder.stop();
-			const dir = this.plugin.settings.transcriber.audioDir;
-			const path = await this.fileService.saveRecording(result.blob, dir);
-			new Notice(`Recording saved to ${path}`);
-			this.close();
+			try {
+				// Stop and save recording
+				const result: RecordingResult = await this.recorder.stop();
+				const audioDir = this.plugin.settings.transcriber.audioDir;
+				const audioPath = await this.fileService.saveRecording(result.blob, audioDir);
+				new Notice(`Recording saved to ${audioPath}`);
+
+				// Transcribe audio
+				new Notice('Transcribing audio…');
+				const transcript = await this.plugin.transcriber.transcribe(result.blob, this.plugin.settings.transcriber);
+				const transcriptDir = this.plugin.settings.transcriber.transcriptDir;
+				const transcriptPath = await this.fileService.saveText(transcript, transcriptDir);
+				new Notice(`Transcript saved to ${transcriptPath}`);
+			} catch (error: any) {
+				new Notice(`Error: ${error.message}`);
+				console.error(error);
+			} finally {
+				this.close();
+			}
 		};
 	}
 
 	onClose() {
-		const { contentEl } = this;
-		contentEl.empty();
+		// Stop updating timer but keep recording running
+		clearInterval(this.intervalId);
+		this.contentEl.empty();
+	}
+
+	private updateUI() {
+		if (this.recorder.isRecording()) {
+			this.recordBtn.setAttr('disabled', 'true');
+			this.pauseBtn.removeAttribute('disabled');
+			this.stopBtn.removeAttribute('disabled');
+			this.pauseBtn.setText(this.recorder.isPaused() ? 'Resume' : 'Pause');
+		} else {
+			this.recordBtn.removeAttribute('disabled');
+			this.pauseBtn.setAttr('disabled', 'true');
+			this.stopBtn.setAttr('disabled', 'true');
+		}
+	}
+
+	private formatTime(seconds: number): string {
+		const m = Math.floor(seconds / 60);
+		const s = Math.floor(seconds % 60);
+		return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 	}
 } 
