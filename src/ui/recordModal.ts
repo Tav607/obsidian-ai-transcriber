@@ -24,7 +24,7 @@ export default class RecordModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl('h2', { text: 'Record Audio (Non-Streaming)' });
+		contentEl.createEl('h2', { text: 'Record Audio' });
 
 		// Elapsed time display
 		this.timerEl = contentEl.createEl('div', { cls: 'recorder-timer', text: '00:00' });
