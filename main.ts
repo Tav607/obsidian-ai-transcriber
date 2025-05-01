@@ -15,6 +15,7 @@ export default class ObsidianAITranscriber extends Plugin {
 	transcriber: TranscriberService;
 	fileService: FileService;
 	editorService: EditorService;
+	statusBarItem: HTMLElement;
 
 	async onload() {
 		await this.loadSettings();
@@ -25,6 +26,10 @@ export default class ObsidianAITranscriber extends Plugin {
 		// Initialize FileService and EditorService
 		this.fileService = new FileService(this.app);
 		this.editorService = new EditorService();
+
+		// Add status bar item for plugin status
+		this.statusBarItem = this.addStatusBarItem();
+		this.updateStatus('Transcriber Idle');
 
 		// Ribbon button for non-streaming recording
 		const ribbonIconEl = this.addRibbonIcon('microphone', 'Record Audio', () => {
@@ -47,15 +52,18 @@ export default class ObsidianAITranscriber extends Plugin {
 		// Context menu for audio files
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
-				if (file instanceof TFile && file.extension === 'webm') {
+				if (file instanceof TFile && (file.extension === 'webm' || file.extension === 'm4a')) {
 					menu.addItem((item) => {
 						item.setTitle('Transcribe with AI')
 							.setIcon('microphone')
 							.onClick(async () => {
+								this.updateStatus('transcribing');
 								new Notice('Transcribing audio…');
 								try {
 									const arrayBuffer = await this.app.vault.readBinary(file);
-									const blob = new Blob([arrayBuffer], { type: 'audio/webm' });
+									// Determine MIME type based on file extension
+									const mime = file.extension === 'm4a' ? 'audio/mp4' : 'audio/webm';
+									const blob = new Blob([arrayBuffer], { type: mime });
 									const transcript = await this.transcriber.transcribe(blob, this.settings.transcriber);
 									const dir = this.settings.transcriber.transcriptDir;
 									if (this.settings.editor.enabled) {
@@ -63,19 +71,23 @@ export default class ObsidianAITranscriber extends Plugin {
 											const rawPath = await this.fileService.saveText(transcript, dir);
 											new Notice(`Transcript saved to ${rawPath}`);
 										}
+										this.updateStatus('editing');
 										new Notice('Editing transcript…');
 										const edited = await this.editorService.edit(transcript, this.settings.editor);
 										const editedPath = await this.fileService.saveText(edited, dir);
 										new Notice(`Edited transcript saved to ${editedPath}`);
 										await this.fileService.openFile(editedPath);
+										this.updateStatus('idle');
 									} else {
 										const transcriptPath = await this.fileService.saveText(transcript, dir);
 										new Notice(`Transcript saved to ${transcriptPath}`);
 										await this.fileService.openFile(transcriptPath);
+										this.updateStatus('idle');
 									}
 								} catch (error: any) {
 									new Notice(`Error: ${error.message}`);
 									console.error(error);
+									this.updateStatus('idle');
 								}
 							});
 					});
@@ -103,5 +115,13 @@ export default class ObsidianAITranscriber extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	/**
+	 * Update the status bar text to reflect current plugin state.
+	 * @param status The status text to display.
+	 */
+	public updateStatus(status: string) {
+		this.statusBarItem.setText(status);
 	}
 }
