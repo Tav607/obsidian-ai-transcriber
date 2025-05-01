@@ -57,7 +57,7 @@ export default class ObsidianAITranscriber extends Plugin {
 						item.setTitle('Transcribe with AI')
 							.setIcon('microphone')
 							.onClick(async () => {
-								this.updateStatus('transcribing');
+								this.updateStatus('AI Transcribing');
 								new Notice('Transcribing audio…');
 								try {
 									const arrayBuffer = await this.app.vault.readBinary(file);
@@ -71,23 +71,23 @@ export default class ObsidianAITranscriber extends Plugin {
 											const rawPath = await this.fileService.saveText(transcript, dir);
 											new Notice(`Transcript saved to ${rawPath}`);
 										}
-										this.updateStatus('editing');
+										this.updateStatus('AI Editing');
 										new Notice('Editing transcript…');
 										const edited = await this.editorService.edit(transcript, this.settings.editor);
 										const editedPath = await this.fileService.saveText(edited, dir);
 										new Notice(`Edited transcript saved to ${editedPath}`);
 										await this.fileService.openFile(editedPath);
-										this.updateStatus('idle');
+										this.updateStatus('Transcriber Idle');
 									} else {
 										const transcriptPath = await this.fileService.saveText(transcript, dir);
 										new Notice(`Transcript saved to ${transcriptPath}`);
 										await this.fileService.openFile(transcriptPath);
-										this.updateStatus('idle');
+										this.updateStatus('Transcriber Idle');
 									}
 								} catch (error: any) {
 									new Notice(`Error: ${error.message}`);
 									console.error(error);
-									this.updateStatus('idle');
+									this.updateStatus('Transcriber Idle');
 								}
 							});
 					});
