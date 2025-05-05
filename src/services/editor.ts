@@ -49,9 +49,28 @@ export class EditorService {
 			return result;
 		}
 
-		// Gemini editing not implemented
+		// Gemini editing using Google GenAI SDK
 		if (settings.provider === 'gemini') {
-			throw new Error('Gemini editing provider is not implemented yet');
+			// Use Google GenAI SDK for Gemini editing
+			const { GoogleGenAI } = await import('@google/genai');
+			const ai = new GoogleGenAI({ apiKey: settings.apiKey });
+			// Combine system prompt, user prompt, and transcript text
+			const geminiContent = settings.systemPrompt
+				? `${settings.systemPrompt}\n\n${settings.userPrompt ? `${settings.userPrompt}\n\n${text}` : text}`
+				: settings.userPrompt
+					? `${settings.userPrompt}\n\n${text}`
+					: text;
+			// Call Gemini model to edit the content
+			const geminiResponse = await ai.models.generateContent({
+				model: settings.model,
+				contents: geminiContent,
+				config: { temperature: settings.temperature },
+			});
+			const geminiResult = geminiResponse.text;
+			if (typeof geminiResult !== 'string') {
+				throw new Error('Invalid response from Gemini editing API');
+			}
+			return geminiResult;
 		}
 
 		throw new Error(`Unsupported editing provider: ${settings.provider}`);
