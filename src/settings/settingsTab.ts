@@ -15,7 +15,7 @@ export default class SettingsTab extends PluginSettingTab {
 		containerEl.empty();
 
 		// Transcriber Settings
-		containerEl.createEl('h2', { text: 'Transcriber Settings' });
+		containerEl.createEl('h2', { text: '🎙️ Transcriber Settings' });
 		new Setting(containerEl)
 			.setName('API Provider')
 			.setDesc('Choose OpenAI or Gemini')
@@ -63,13 +63,16 @@ export default class SettingsTab extends PluginSettingTab {
 			);
 		new Setting(containerEl)
 			.setName('Temperature')
-			.setDesc('0-1')
-			.addSlider(slider => slider
-				.setLimits(0, 1, 0.1)
-				.setValue(this.plugin.settings.transcriber.temperature)
+			.setDesc('Enter a value between 0.0 and 1.0')
+			.addText(text => text
+				.setPlaceholder('0.0-1.0')
+				.setValue(this.plugin.settings.transcriber.temperature.toString())
 				.onChange(async (value) => {
-					this.plugin.settings.transcriber.temperature = value;
-					await this.plugin.saveSettings();
+					const num = parseFloat(value);
+					if (!isNaN(num) && num >= 0 && num <= 1) {
+						this.plugin.settings.transcriber.temperature = num;
+						await this.plugin.saveSettings();
+					}
 				})
 			);
 		new Setting(containerEl)
@@ -96,7 +99,7 @@ export default class SettingsTab extends PluginSettingTab {
 			);
 
 		// Editor Settings
-		containerEl.createEl('h2', { text: 'Editor Settings' });
+		containerEl.createEl('h2', { text: '✏️ Editor Settings' });
 		new Setting(containerEl)
 			.setName('Enable Editor')
 			.setDesc('Toggle to enable Editor API enhancements')
@@ -165,13 +168,16 @@ export default class SettingsTab extends PluginSettingTab {
 			);
 		new Setting(containerEl)
 			.setName('Temperature')
-			.setDesc('0-1')
-			.addSlider(slider => slider
-				.setLimits(0, 1, 0.1)
-				.setValue(this.plugin.settings.editor.temperature)
+			.setDesc('Enter a value between 0.0 and 1.0')
+			.addText(text => text
+				.setPlaceholder('0.0-1.0')
+				.setValue(this.plugin.settings.editor.temperature.toString())
 				.onChange(async (value) => {
-					this.plugin.settings.editor.temperature = value;
-					await this.plugin.saveSettings();
+					const num = parseFloat(value);
+					if (!isNaN(num) && num >= 0 && num <= 1) {
+						this.plugin.settings.editor.temperature = num;
+						await this.plugin.saveSettings();
+					}
 				})
 			);
 		new Setting(containerEl)

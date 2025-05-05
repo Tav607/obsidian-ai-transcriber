@@ -89,6 +89,10 @@ export default class RecordModal extends Modal {
 				const audioPath = await this.fileService.saveRecording(result.blob, audioDir);
 				new Notice(`Recording saved to ${audioPath}`);
 
+				// Extract base name (timestamp) from audio filename
+				const audioFileName = audioPath.substring(audioPath.lastIndexOf('/') + 1);
+				const baseName = audioFileName.replace(/\.[^/.]+$/, '');
+
 				// Transcribe audio
 				this.plugin.updateStatus('AI Transcribing...');
 				new Notice('Transcribing audio…');
@@ -99,17 +103,23 @@ export default class RecordModal extends Modal {
 				if (this.plugin.settings.editor.enabled) {
 					this.plugin.updateStatus('AI Editing...');
 					if (this.plugin.settings.editor.keepOriginal) {
-						const rawPath = await this.fileService.saveText(transcript, dir);
+						// Save raw transcript with custom name
+						const rawFileName = `${baseName}_raw_transcript.md`;
+						const rawPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
 						new Notice(`Transcript saved to ${rawPath}`);
 					}
 					new Notice('Editing transcript…');
 					const edited = await this.plugin.editorService.edit(transcript, this.plugin.settings.editor);
-					const editedPath = await this.fileService.saveText(edited, dir);
+					// Save edited transcript with custom name
+					const editedFileName = `${baseName}_edited_transcript.md`;
+					const editedPath = await this.fileService.saveTextWithName(edited, dir, editedFileName);
 					new Notice(`Edited transcript saved to ${editedPath}`);
 					await this.fileService.openFile(editedPath);
 					this.plugin.updateStatus('Transcriber Idle');
 				} else {
-					const transcriptPath = await this.fileService.saveText(transcript, dir);
+					// Save raw transcript with custom name (no editing)
+					const rawFileName = `${baseName}_raw_transcript.md`;
+					const transcriptPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
 					new Notice(`Transcript saved to ${transcriptPath}`);
 					await this.fileService.openFile(transcriptPath);
 					this.plugin.updateStatus('Transcriber Idle');

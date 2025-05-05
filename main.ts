@@ -66,20 +66,29 @@ export default class ObsidianAITranscriber extends Plugin {
 									const blob = new Blob([arrayBuffer], { type: mime });
 									const transcript = await this.transcriber.transcribe(blob, this.settings.transcriber);
 									const dir = this.settings.transcriber.transcriptDir;
+									// Extract base name from audio file name
+									const audioFileName = file.name;
+									const baseName = audioFileName.replace(/\.[^/.]+$/, '');
 									if (this.settings.editor.enabled) {
+										this.updateStatus('AI Editing...');
 										if (this.settings.editor.keepOriginal) {
-											const rawPath = await this.fileService.saveText(transcript, dir);
+											// Save raw transcript with custom name
+											const rawFileName = `${baseName}_raw_transcript.md`;
+											const rawPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
 											new Notice(`Transcript saved to ${rawPath}`);
 										}
-										this.updateStatus('AI Editing...');
 										new Notice('Editing transcript…');
 										const edited = await this.editorService.edit(transcript, this.settings.editor);
-										const editedPath = await this.fileService.saveText(edited, dir);
+										// Save edited transcript with custom name
+										const editedFileName = `${baseName}_edited_transcript.md`;
+										const editedPath = await this.fileService.saveTextWithName(edited, dir, editedFileName);
 										new Notice(`Edited transcript saved to ${editedPath}`);
 										await this.fileService.openFile(editedPath);
 										this.updateStatus('Transcriber Idle');
 									} else {
-										const transcriptPath = await this.fileService.saveText(transcript, dir);
+										// Save raw transcript with custom name (no editing)
+										const rawFileName = `${baseName}_raw_transcript.md`;
+										const transcriptPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
 										new Notice(`Transcript saved to ${transcriptPath}`);
 										await this.fileService.openFile(transcriptPath);
 										this.updateStatus('Transcriber Idle');
@@ -94,26 +103,26 @@ export default class ObsidianAITranscriber extends Plugin {
 				}
 			})
 		);
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
 	}
 
-	onunload() {
-
+	/**
+	 * Cleanup when the plugin is unloaded.
+	 */
+	public onunload(): void {
+		// Optional cleanup code
 	}
 
-	async loadSettings() {
+	/**
+	 * Load plugin settings from disk.
+	 */
+	public async loadSettings(): Promise<void> {
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 	}
 
-	async saveSettings() {
+	/**
+	 * Save plugin settings to disk.
+	 */
+	public async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 	}
 
@@ -121,7 +130,7 @@ export default class ObsidianAITranscriber extends Plugin {
 	 * Update the status bar text to reflect current plugin state.
 	 * @param status The status text to display.
 	 */
-	public updateStatus(status: string) {
+	public updateStatus(status: string): void {
 		this.statusBarItem.setText(status);
 	}
 }

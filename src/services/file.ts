@@ -33,12 +33,25 @@ export class FileService {
 		return path;
 	}
 
+	/**
+	 * @deprecated use saveTextWithName(text, dir, getTimestampName('md'))
+	 */
 	async saveText(text: string, dir: string): Promise<string> {
 		const ext = 'md';
 		const fileName = this.getTimestampName(ext);
 		const folder = dir ? dir.replace(/\\/g, '/').replace(/\/$/, '') : '';
 		const path = normalizePath(folder ? `${folder}/${fileName}` : fileName);
 		// Create text file in vault
+		await this.app.vault.create(path, text);
+		return path;
+	}
+
+	/**
+	 * Save a text file using a custom filename (including extension).
+	 */
+	async saveTextWithName(text: string, dir: string, fileName: string): Promise<string> {
+		const folder = dir ? dir.replace(/\\/g, '/').replace(/\/$/, '') : '';
+		const path = normalizePath(folder ? `${folder}/${fileName}` : fileName);
 		await this.app.vault.create(path, text);
 		return path;
 	}
