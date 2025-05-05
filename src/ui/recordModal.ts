@@ -47,7 +47,7 @@ export default class RecordModal extends Modal {
 			try {
 				// Start recording
 				await this.recorder.start();
-				this.plugin.updateStatus('Recording');
+				this.plugin.updateStatus('Recording...');
 				new Notice('Recording started');
 				// Manually update button states immediately
 				this.recordBtn.setAttr('disabled', 'true');
@@ -70,7 +70,7 @@ export default class RecordModal extends Modal {
 				new Notice('Recording paused');
 			} else {
 				this.recorder.resume();
-				this.plugin.updateStatus('Recording');
+				this.plugin.updateStatus('Recording...');
 				this.pauseBtn.setText('Pause');
 				this.isPaused = false;
 				new Notice('Recording resumed');
@@ -80,7 +80,7 @@ export default class RecordModal extends Modal {
 		this.stopBtn.onclick = async () => {
 			this.stopBtn.setAttr('disabled', 'true');
 			this.pauseBtn.setAttr('disabled', 'true');
-			this.plugin.updateStatus('AI Transcribing');
+			this.plugin.updateStatus('AI Transcribing...');
 			new Notice('Stopping recording…');
 			try {
 				// Stop and save recording
@@ -90,14 +90,14 @@ export default class RecordModal extends Modal {
 				new Notice(`Recording saved to ${audioPath}`);
 
 				// Transcribe audio
-				this.plugin.updateStatus('AI Transcribing');
+				this.plugin.updateStatus('AI Transcribing...');
 				new Notice('Transcribing audio…');
 				const transcript = await this.plugin.transcriber.transcribe(result.blob, this.plugin.settings.transcriber);
 				const transcriptDir = this.plugin.settings.transcriber.transcriptDir;
 				// Handle transcript saving and optional editing
 				const dir = transcriptDir;
 				if (this.plugin.settings.editor.enabled) {
-					this.plugin.updateStatus('AI Editing');
+					this.plugin.updateStatus('AI Editing...');
 					if (this.plugin.settings.editor.keepOriginal) {
 						const rawPath = await this.fileService.saveText(transcript, dir);
 						new Notice(`Transcript saved to ${rawPath}`);

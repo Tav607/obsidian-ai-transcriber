@@ -18,10 +18,10 @@ export class TranscriberService {
 				formData.append('file', chunk, 'audio.wav');
 			formData.append('model', settings.model);
 				if (settings.prompt) formData.append('prompt', settings.prompt);
-				const temp = settings.temperature ?? 0.2;
+				const temp = settings.temperature ?? 0.1;
 				formData.append('temperature', temp.toString());
-				formData.append('condition_on_previous_text', 'false');
-				formData.append('compression_ratio_threshold', '2.0');
+				formData.append('condition_on_previous_text', 'true');
+				formData.append('compression_ratio_threshold', '1.2');
 
 			const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
 				method: 'POST',
@@ -44,133 +44,6 @@ export class TranscriberService {
 		}
 
 		throw new Error(`Unsupported transcription provider: ${settings.provider}`);
-	}
-
-	/**
-	 * Create a realtime transcription session via WebSocket.
-	 * @param settings TranscriberSettings from plugin configuration
-	 * @param onTranscript Callback invoked with each transcription segment text
-	 * @returns Controller with appendAudio and close methods
-	 */
-	public async createRealtimeSession(
-		settings: import('../settings/types').TranscriberSettings,
-		onTranscript: (text: string) => void
-	): Promise<{ appendAudio: (blob: Blob) => Promise<void>; close: () => void }> {
-		if (!settings.apiKey) {
-			throw new Error('Transcriber API key is not configured');
-		}
-		// Create transcription session and obtain ephemeral token
-		const resp = await fetch('https://api.openai.com/v1/realtime/transcription_sessions', {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${settings.apiKey}`,
-				'Content-Type': 'application/json',
-				'OpenAI-Beta': 'assistants=v2'
-			},
-			body: JSON.stringify({
-				input_audio_format: 'pcm16',
-				input_audio_transcription: {
-					model: settings.model,
-					prompt: settings.prompt || '',
-					language: ''
-				},
-				turn_detection: {
-					type: 'server_vad',
-					threshold: 0.5,
-					prefix_padding_ms: 300,
-					silence_duration_ms: 500
-				},
-				input_audio_noise_reduction: { type: 'near_field' },
-				include: ['item.input_audio_transcription.logprobs']
-			})
-		});
-		if (!resp.ok) {
-			const errText = await resp.text();
-			throw new Error(`Realtime session error: ${resp.status} ${errText}`);
-		}
-		const data = await resp.json();
-		const token = data.client_secret?.value ?? data.client_secret;
-		// Open WebSocket connection with proper subprotocols
-		const ws = new WebSocket(
-			'wss://api.openai.com/v1/realtime?intent=transcription',
-			[
-				'realtime',
-				`openai-insecure-api-key.${token}`,
-				'openai-beta.realtime-v1'
-			]
-		);
-		// On connection open, initialize session
-		ws.onopen = () => {
-			const payload = {
-				type: 'transcription_session.update',
-				session: {
-					input_audio_format: 'pcm16',
-					input_audio_transcription: {
-						model: settings.model,
-						prompt: settings.prompt || '',
-						primary_language: 'en'
-					},
-					turn_detection: {
-						type: 'server_vad',
-						threshold: 0.5,
-						prefix_padding_ms: 300,
-						silence_duration_ms: 500
-					},
-					input_audio_noise_reduction: { type: 'near_field' },
-					include: ['item.input_audio_transcription.logprobs']
-				}
-			};
-			ws.send(JSON.stringify(payload));
-		};
-		// Handle incoming transcription events
-		ws.onmessage = (event: MessageEvent) => {
-			try {
-				const msg = JSON.parse(event.data);
-				// Interim transcription
-				if (msg.type === 'conversation.item.input_audio_transcription.delta' && msg.delta) {
-					onTranscript(msg.delta);
-				}
-				// Final transcription
-				else if (msg.type === 'conversation.item.input_audio_transcription.completed' && msg.transcript) {
-					onTranscript(msg.transcript);
-				}
-			} catch (e) {
-				console.error('WS message parse error', e);
-			}
-		};
-		ws.onerror = (err) => {
-			console.error('WebSocket error', err);
-		};
-		// Setup AudioContext for PCM conversion
-		const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-		// Helper: Convert audio Blob to PCM16 Base64 string
-		const blobToPCM16Base64 = async (blob: Blob): Promise<string> => {
-			// Decode audio data
-			const arrayBuffer = await blob.arrayBuffer();
-			const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-			// Convert first channel Float32 samples to Int16
-			const floatData = audioBuffer.getChannelData(0);
-			const pcm16 = new Int16Array(floatData.length);
-			for (let i = 0; i < floatData.length; i++) {
-				const s = Math.max(-1, Math.min(1, floatData[i]));
-				pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-			}
-			// Convert to Base64
-			const u8arr = new Uint8Array(pcm16.buffer);
-			let binary = '';
-			for (let i = 0; i < u8arr.length; i++) {
-				binary += String.fromCharCode(u8arr[i]);
-			}
-			return btoa(binary);
-		};
-		// Return controller to append audio and close session
-		return {
-			appendAudio: async (blob: Blob) => {
-				const b64 = await blobToPCM16Base64(blob);
-				ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b64 }));
-			},
-			close: () => ws.close()
-		};
 	}
 
 	// Preprocess audio: decode, resample to 16k mono and chunk into ≤10min WAV blobs
@@ -197,18 +70,73 @@ export class TranscriberService {
 		source.connect(offlineCtx.destination);
 		source.start();
 		const resampled = await offlineCtx.startRendering();
-		const chunks: Blob[] = [];
+		// Silence trimming: remove continuous silent segments longer than 2 seconds
+		const rawData = resampled.getChannelData(0);
+		const silenceThreshold = 0.01;
+		const minSilenceTrimSamples = Math.floor(2 * sampleRate);
+		const data = (() => {
+			const trimmedArr: number[] = [];
+			let silentCount = 0;
+			for (let i = 0; i < rawData.length; i++) {
+				const sample = rawData[i];
+				if (Math.abs(sample) <= silenceThreshold) {
+					silentCount++;
+				} else {
+					if (silentCount > 0 && silentCount < minSilenceTrimSamples) {
+						for (let j = i - silentCount; j < i; j++) {
+							trimmedArr.push(rawData[j]);
+						}
+					}
+					silentCount = 0;
+					trimmedArr.push(sample);
+				}
+			}
+			return new Float32Array(trimmedArr);
+		})();
 		const maxSamples = maxSecs * sampleRate;
-		const totalSamples = resampled.length;
-		const segments = Math.ceil(totalSamples / maxSamples);
+		const totalSamples = data.length;
+		const silenceWindowSamples = Math.floor(0.3 * sampleRate); // 300ms window for splitting
+		const searchRangeSamples = Math.floor(5 * sampleRate);      // 5 seconds search range
 		const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-		for (let i = 0; i < segments; i++) {
-			const start = i * maxSamples;
-			const end = Math.min(start + maxSamples, totalSamples);
-			const len = end - start;
-			const segmentBuf = audioCtx.createBuffer(1, len, sampleRate);
-			segmentBuf.getChannelData(0).set(resampled.getChannelData(0).subarray(start, end));
-			chunks.push(this.bufferToWav(segmentBuf));
+		const chunks: Blob[] = [];
+		let startSample = 0;
+		const minChunkSamples = sampleRate; // discard segments shorter than 1s
+		while (startSample < totalSamples) {
+			let endSample = Math.min(startSample + maxSamples, totalSamples);
+			if (endSample < totalSamples) {
+				let splitPoint: number | null = null;
+				const desiredSplit = endSample;
+				// search backward for a silent region
+				const backwardStart = Math.max(silenceWindowSamples, desiredSplit - searchRangeSamples);
+				for (let i = desiredSplit; i >= backwardStart; i--) {
+					let silent = true;
+					for (let j = i - silenceWindowSamples; j < i; j++) {
+						if (Math.abs(data[j]) > silenceThreshold) { silent = false; break; }
+					}
+					if (silent) { splitPoint = i - silenceWindowSamples; break; }
+				}
+				// if no silent point before, search forward
+				if (splitPoint === null) {
+					const forwardEnd = Math.min(totalSamples, desiredSplit + searchRangeSamples);
+					for (let i = desiredSplit; i < forwardEnd; i++) {
+						let silent = true;
+						for (let j = i; j < i + silenceWindowSamples && j < totalSamples; j++) {
+							if (Math.abs(data[j]) > silenceThreshold) { silent = false; break; }
+						}
+						if (silent) { splitPoint = i; break; }
+					}
+				}
+				if (splitPoint !== null && splitPoint > startSample) {
+					endSample = splitPoint;
+				}
+			}
+			const segmentBuf = audioCtx.createBuffer(1, endSample - startSample, sampleRate);
+			segmentBuf.getChannelData(0).set(data.subarray(startSample, endSample));
+			const segmentSamples = endSample - startSample;
+			if (segmentSamples >= minChunkSamples) {
+				chunks.push(this.bufferToWav(segmentBuf));
+			}
+			startSample = endSample;
 		}
 		return chunks;
 	}

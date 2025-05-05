@@ -30,7 +30,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 		apiKey: '',
 		model: 'gpt-4o-transcribe',
 		prompt: '',
-		temperature: 0.2,
+		temperature: 0.1,
 		audioDir: '',
 		transcriptDir: '',
 	},
@@ -41,7 +41,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 		model: 'gemini-2.5-pro-preview-03-25',
 		systemPrompt: '',
 		userPrompt: '',
-		temperature: 0.4,
+		temperature: 0.3,
 		keepOriginal: true,
 	},
 };
