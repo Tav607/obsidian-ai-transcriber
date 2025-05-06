@@ -32,7 +32,7 @@ export default class SettingsTab extends PluginSettingTab {
 			.setName('API Key')
 			.setDesc('Transcriber API Key')
 			.addText(text => text
-				.setPlaceholder('')
+				.setPlaceholder('Your API Key')
 				.setValue(this.plugin.settings.transcriber.apiKey)
 				.onChange(async (value) => {
 					this.plugin.settings.transcriber.apiKey = value;
@@ -41,9 +41,9 @@ export default class SettingsTab extends PluginSettingTab {
 			);
 		new Setting(containerEl)
 			.setName('Model Name')
-			.setDesc('')
+			.setDesc('Specify the model to use for transcription.')
 			.addText(text => text
-				.setPlaceholder('')
+				.setPlaceholder('Example: gpt-4o-transcribe')
 				.setValue(this.plugin.settings.transcriber.model)
 				.onChange(async (value) => {
 					this.plugin.settings.transcriber.model = value;
@@ -52,9 +52,9 @@ export default class SettingsTab extends PluginSettingTab {
 			);
 		new Setting(containerEl)
 			.setName('Prompt')
-			.setDesc('')
+			.setDesc('Optional: Add words with their correct spellings to help with transcription.')
 			.addTextArea(textArea => textArea
-				.setPlaceholder('')
+				.setPlaceholder('Clarify uncommon words or phrases in the transcript.')
 				.setValue(this.plugin.settings.transcriber.prompt)
 				.onChange(async (value) => {
 					this.plugin.settings.transcriber.prompt = value;
@@ -63,7 +63,7 @@ export default class SettingsTab extends PluginSettingTab {
 			);
 		new Setting(containerEl)
 			.setName('Temperature')
-			.setDesc('Enter a value between 0.0 and 1.0')
+			.setDesc('Enter a value between 0.0 and 1.0. Suggested value: 0.1.')
 			.addText(text => text
 				.setPlaceholder('0.0-1.0')
 				.setValue(this.plugin.settings.transcriber.temperature.toString())
@@ -126,7 +126,7 @@ export default class SettingsTab extends PluginSettingTab {
 			.setName('API Key')
 			.setDesc('Editor API Key')
 			.addText(text => text
-				.setPlaceholder('')
+				.setPlaceholder('Your API Key.')
 				.setValue(this.plugin.settings.editor.apiKey)
 				.onChange(async (value) => {
 					this.plugin.settings.editor.apiKey = value;
@@ -135,9 +135,9 @@ export default class SettingsTab extends PluginSettingTab {
 			);
 		new Setting(containerEl)
 			.setName('Model Name')
-			.setDesc('')
+			.setDesc('Specify the model to use for editing.')
 			.addText(text => text
-				.setPlaceholder('')
+				.setPlaceholder('Example: gemini-2.5-flash-preview-04-17')
 				.setValue(this.plugin.settings.editor.model)
 				.onChange(async (value) => {
 					this.plugin.settings.editor.model = value;
@@ -146,29 +146,33 @@ export default class SettingsTab extends PluginSettingTab {
 			);
 		new Setting(containerEl)
 			.setName('System Prompt')
-			.setDesc('')
-			.addTextArea(textArea => textArea
-				.setPlaceholder('')
-				.setValue(this.plugin.settings.editor.systemPrompt)
-				.onChange(async (value) => {
-					this.plugin.settings.editor.systemPrompt = value;
-					await this.plugin.saveSettings();
-				})
-			);
+			.setDesc('Specify system-level instructions for the editor.')
+			.addTextArea(textArea => {
+				textArea
+					.setPlaceholder('')
+					.setValue(this.plugin.settings.editor.systemPrompt)
+					.onChange(async (value) => {
+						this.plugin.settings.editor.systemPrompt = value;
+						await this.plugin.saveSettings();
+					});
+				textArea.inputEl.rows = 10;
+			});
 		new Setting(containerEl)
 			.setName('User Prompt')
-			.setDesc('')
-			.addTextArea(textArea => textArea
-				.setPlaceholder('')
-				.setValue(this.plugin.settings.editor.userPrompt)
-				.onChange(async (value) => {
-					this.plugin.settings.editor.userPrompt = value;
-					await this.plugin.saveSettings();
-				})
-			);
+			.setDesc('Specify user-level instructions for the editor.')
+			.addTextArea(textArea => {
+				textArea
+					.setPlaceholder('')
+					.setValue(this.plugin.settings.editor.userPrompt)
+					.onChange(async (value) => {
+						this.plugin.settings.editor.userPrompt = value;
+						await this.plugin.saveSettings();
+					});
+				textArea.inputEl.rows = 3;
+			});
 		new Setting(containerEl)
 			.setName('Temperature')
-			.setDesc('Enter a value between 0.0 and 1.0')
+			.setDesc('Enter a value between 0.0 and 1.0. Suggested value: 0.3.')
 			.addText(text => text
 				.setPlaceholder('0.0-1.0')
 				.setValue(this.plugin.settings.editor.temperature.toString())

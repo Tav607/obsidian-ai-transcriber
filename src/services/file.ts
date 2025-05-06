@@ -25,6 +25,14 @@ export class FileService {
 		const ext = 'webm';
 		const fileName = this.getTimestampName(ext);
 		const folder = dir ? dir.replace(/\\/g, '/').replace(/\/$/, '') : '';
+		// Ensure target folder exists
+		if (folder) {
+			const folderPath = normalizePath(folder);
+			const folderFile = this.app.vault.getAbstractFileByPath(folderPath);
+			if (!folderFile) {
+				await this.app.vault.createFolder(folderPath);
+			}
+		}
 		const path = normalizePath(folder ? `${folder}/${fileName}` : fileName);
 		const arrayBuffer = await blob.arrayBuffer();
 		const uint8Array = new Uint8Array(arrayBuffer);
@@ -34,23 +42,18 @@ export class FileService {
 	}
 
 	/**
-	 * @deprecated use saveTextWithName(text, dir, getTimestampName('md'))
-	 */
-	async saveText(text: string, dir: string): Promise<string> {
-		const ext = 'md';
-		const fileName = this.getTimestampName(ext);
-		const folder = dir ? dir.replace(/\\/g, '/').replace(/\/$/, '') : '';
-		const path = normalizePath(folder ? `${folder}/${fileName}` : fileName);
-		// Create text file in vault
-		await this.app.vault.create(path, text);
-		return path;
-	}
-
-	/**
 	 * Save a text file using a custom filename (including extension).
 	 */
 	async saveTextWithName(text: string, dir: string, fileName: string): Promise<string> {
 		const folder = dir ? dir.replace(/\\/g, '/').replace(/\/$/, '') : '';
+		// Ensure target folder exists
+		if (folder) {
+			const folderPath = normalizePath(folder);
+			const folderFile = this.app.vault.getAbstractFileByPath(folderPath);
+			if (!folderFile) {
+				await this.app.vault.createFolder(folderPath);
+			}
+		}
 		const path = normalizePath(folder ? `${folder}/${fileName}` : fileName);
 		await this.app.vault.create(path, text);
 		return path;
@@ -63,4 +66,4 @@ export class FileService {
 			await this.app.workspace.getLeaf(true).openFile(file);
 		}
 	}
-} 
+}
