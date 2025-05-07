@@ -1,4 +1,28 @@
+import OpenAI from "openai";
+
 export class TranscriberService {
+	private async blobToBase64(blob: Blob): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onloadend = () => {
+				if (typeof reader.result === 'string') {
+					// reader.result is "data:audio/wav;base64,xxxxxx..."
+					// We need to strip the "data:[<mediatype>][;base64]," part.
+					const base64Data = reader.result.split(',')[1];
+					if (base64Data) {
+						resolve(base64Data);
+					} else {
+						reject(new Error('Failed to extract base64 data from blob string'));
+					}
+				} else {
+					reject(new Error('Failed to read blob as base64 string: reader.result is not a string.'));
+				}
+			};
+			reader.onerror = (error) => reject(new Error(`FileReader error: ${error}`));
+			reader.readAsDataURL(blob);
+		});
+	}
+
 	/**
 	 * Transcribe audio blob using OpenAI or Gemini API based on settings.
 	 * @param blob Audio blob to transcribe
@@ -10,37 +34,62 @@ export class TranscriberService {
 		}
 		// Handle OpenAI transcription
 		if (settings.provider === 'openai') {
-			// Preprocess: resample to 16k mono WAV and split into ≤10min chunks
+			// Use OpenAI SDK for transcription
+			const openai = new OpenAI({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true });
 			const chunks = await this.preprocess(blob);
 			let fullText = '';
 			for (const chunk of chunks) {
-			const formData = new FormData();
-				formData.append('file', chunk, 'audio.wav');
-			formData.append('model', settings.model);
-				if (settings.prompt) formData.append('prompt', settings.prompt);
-				const temp = settings.temperature ?? 0.2;
-				formData.append('temperature', temp.toString());
-				formData.append('condition_on_previous_text', 'true');
-				formData.append('compression_ratio_threshold', '2.4');
-
-			const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-				method: 'POST',
-					headers: { Authorization: `Bearer ${settings.apiKey}` },
-				body: formData
-			});
-			if (!response.ok) {
-				const errorText = await response.text();
-				throw new Error(`OpenAI Transcription error: ${response.status} ${errorText}`);
-			}
-			const data = await response.json();
-				fullText += data.text as string;
+				const transcription = await openai.audio.transcriptions.create({
+					file: new File([chunk], 'audio.wav', { type: 'audio/wav' }),
+					model: settings.model,
+					response_format: 'text',
+					...(settings.prompt ? { prompt: settings.prompt } : {}),
+				});
+				fullText += transcription;
 			}
 			return fullText;
 		}
 
-		// Handle Gemini transcription (not implemented)
+		// Handle Gemini transcription
 		if (settings.provider === 'gemini') {
-			throw new Error('Gemini transcription provider is not implemented yet');
+			const chunks = await this.preprocess(blob);
+			let fullText = '';
+
+			for (const chunk of chunks) {
+				const base64Audio = await this.blobToBase64(chunk);
+				// Use native generateContent endpoint for audio transcription
+				const url = `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`;
+				const restRequestBody = {
+					contents: [{
+						parts: [
+							{ text: settings.prompt || "Transcribe this audio. If the language is Chinese, please use Simplified Chinese characters. Provide only the direct transcription text without any introductory phrases." },
+							{ inline_data: { mime_type: 'audio/wav', data: base64Audio } },
+						],
+					}],
+					generationConfig: {
+						temperature: settings.temperature,
+					}
+				};
+				const response = await fetch(url, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(restRequestBody),
+				});
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(`Gemini Transcription error: ${response.status} ${errorText}`);
+				}
+
+				const responseData = await response.json();
+				// Parse native generateContent response structure
+				if (responseData.candidates && responseData.candidates.length > 0 && responseData.candidates[0].content && responseData.candidates[0].content.parts) {
+					fullText += responseData.candidates[0].content.parts.map((part: any) => part.text || '').join('');
+				} else {
+					console.warn('Gemini generateContent response structure unexpected:', responseData);
+					throw new Error('Gemini Transcription error: Unexpected response structure.');
+				}
+			}
+			return fullText;
 		}
 
 		throw new Error(`Unsupported transcription provider: ${settings.provider}`);
