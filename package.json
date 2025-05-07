@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-ai-transcriber",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"description": "This is a plugin for Obsidian (https://obsidian.md) that transcribes audio files using AI.",
 	"main": "main.js",
 	"scripts": {
