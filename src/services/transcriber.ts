@@ -18,10 +18,10 @@ export class TranscriberService {
 				formData.append('file', chunk, 'audio.wav');
 			formData.append('model', settings.model);
 				if (settings.prompt) formData.append('prompt', settings.prompt);
-				const temp = settings.temperature ?? 0.1;
+				const temp = settings.temperature ?? 0.2;
 				formData.append('temperature', temp.toString());
 				formData.append('condition_on_previous_text', 'true');
-				formData.append('compression_ratio_threshold', '1.2');
+				formData.append('compression_ratio_threshold', '2.4');
 
 			const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
 				method: 'POST',
@@ -47,21 +47,46 @@ export class TranscriberService {
 	}
 
 	// Preprocess audio: decode, resample to 16k mono and chunk into ≤10min WAV blobs
-	private async preprocess(blob: Blob, maxSecs = 600): Promise<Blob[]> {
+	private async preprocess(blob: Blob, maxSecsInput?: number): Promise<Blob[]> {
+		const TARGET_SAMPLE_RATE = 16000;
+		const MAX_CHUNK_SECONDS = maxSecsInput ?? 600; // Default to 10 minutes (600s) if not provided
+		const SILENCE_THRESHOLD = 0.01;
+		const MIN_SILENCE_DURATION_SECONDS = 2;
+		const MIN_SILENCE_TRIM_SAMPLES = Math.floor(MIN_SILENCE_DURATION_SECONDS * TARGET_SAMPLE_RATE);
+		const CHUNK_SPLIT_SILENCE_WINDOW_SECONDS = 0.3;
+		const CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES = Math.floor(CHUNK_SPLIT_SILENCE_WINDOW_SECONDS * TARGET_SAMPLE_RATE);
+		const CHUNK_SPLIT_SEARCH_RANGE_SECONDS = 5;
+		const CHUNK_SPLIT_SEARCH_RANGE_SAMPLES = Math.floor(CHUNK_SPLIT_SEARCH_RANGE_SECONDS * TARGET_SAMPLE_RATE);
+		const MIN_CHUNK_DURATION_SECONDS = 1;
+		const MIN_CHUNK_SAMPLES = Math.floor(MIN_CHUNK_DURATION_SECONDS * TARGET_SAMPLE_RATE);
+
+
 		const arrayBuffer = await blob.arrayBuffer();
-		const decodeCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+		const AudioContextConstructor = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+		if (!AudioContextConstructor) {
+			throw new Error("Web Audio API is not supported in this browser.");
+		}
+		const decodeCtx = new AudioContextConstructor();
 		const originalBuffer = await decodeCtx.decodeAudioData(arrayBuffer);
-		const sampleRate = 16000;
-		const targetLength = Math.ceil(originalBuffer.duration * sampleRate);
-		const offlineCtx = new OfflineAudioContext(1, targetLength, sampleRate);
+		
+		const targetLength = Math.ceil(originalBuffer.duration * TARGET_SAMPLE_RATE);
+		const offlineCtx = new OfflineAudioContext(1, targetLength, TARGET_SAMPLE_RATE);
 		const source = offlineCtx.createBufferSource();
+
 		if (originalBuffer.numberOfChannels > 1) {
-			const ch0 = originalBuffer.getChannelData(0);
-			const ch1 = originalBuffer.getChannelData(1);
+			const numChannels = originalBuffer.numberOfChannels;
 			const monoBuf = offlineCtx.createBuffer(1, originalBuffer.length, originalBuffer.sampleRate);
 			const monoData = monoBuf.getChannelData(0);
-			for (let i = 0; i < monoData.length; i++) {
-				monoData[i] = (ch0[i] + ch1[i]) / 2;
+			const channels = [];
+			for (let c = 0; c < numChannels; c++) {
+				channels.push(originalBuffer.getChannelData(c));
+			}
+			for (let i = 0; i < originalBuffer.length; i++) {
+				let sum = 0;
+				for (let c = 0; c < numChannels; c++) {
+					sum += channels[c][i];
+				}
+				monoData[i] = sum / numChannels;
 			}
 			source.buffer = monoBuf;
 		} else {
@@ -70,58 +95,77 @@ export class TranscriberService {
 		source.connect(offlineCtx.destination);
 		source.start();
 		const resampled = await offlineCtx.startRendering();
-		// Silence trimming: remove continuous silent segments longer than 2 seconds
+		// Silence trimming: remove continuous silent segments longer than MIN_SILENCE_DURATION_SECONDS
 		const rawData = resampled.getChannelData(0);
-		const silenceThreshold = 0.01;
-		const minSilenceTrimSamples = Math.floor(2 * sampleRate);
-		const data = (() => {
-			const trimmedArr: number[] = [];
-			let silentCount = 0;
-			for (let i = 0; i < rawData.length; i++) {
-				const sample = rawData[i];
-				if (Math.abs(sample) <= silenceThreshold) {
-					silentCount++;
-				} else {
-					if (silentCount > 0 && silentCount < minSilenceTrimSamples) {
-						for (let j = i - silentCount; j < i; j++) {
-							trimmedArr.push(rawData[j]);
-						}
-					}
-					silentCount = 0;
-					trimmedArr.push(sample);
+		// const silenceThreshold = 0.01; // Replaced by SILENCE_THRESHOLD
+		// const minSilenceTrimSamples = Math.floor(2 * TARGET_SAMPLE_RATE); // Replaced by MIN_SILENCE_TRIM_SAMPLES
+
+		// Optimized silence trimming to avoid large intermediate arrays
+		let samplesToKeep = 0;
+		let currentSilentCountForCounting = 0;
+		for (let i = 0; i < rawData.length; i++) {
+			const sample = rawData[i];
+			if (Math.abs(sample) <= SILENCE_THRESHOLD) {
+				currentSilentCountForCounting++;
+			} else {
+				if (currentSilentCountForCounting > 0 && currentSilentCountForCounting < MIN_SILENCE_TRIM_SAMPLES) {
+					samplesToKeep += currentSilentCountForCounting; // Keep the short silence
 				}
+				currentSilentCountForCounting = 0;
+				samplesToKeep++; // Keep the current non-silent sample
 			}
-			return new Float32Array(trimmedArr);
-		})();
-		const maxSamples = maxSecs * sampleRate;
+		}
+		// Note: Trailing silence (short or long) is implicitly dropped by this logic,
+		// matching the original behavior where the loop ended without adding trailing short silence.
+
+		const data = new Float32Array(samplesToKeep);
+		let currentIndex = 0;
+		let currentSilentCountForFilling = 0;
+		for (let i = 0; i < rawData.length; i++) {
+			const sample = rawData[i];
+			if (Math.abs(sample) <= SILENCE_THRESHOLD) {
+				currentSilentCountForFilling++;
+			} else {
+				if (currentSilentCountForFilling > 0 && currentSilentCountForFilling < MIN_SILENCE_TRIM_SAMPLES) {
+					for (let j = i - currentSilentCountForFilling; j < i; j++) {
+						data[currentIndex++] = rawData[j];
+					}
+				}
+				currentSilentCountForFilling = 0;
+				data[currentIndex++] = sample;
+			}
+		}
+		// `data` is now the trimmed Float32Array
+
+		const maxSamples = MAX_CHUNK_SECONDS * TARGET_SAMPLE_RATE;
 		const totalSamples = data.length;
-		const silenceWindowSamples = Math.floor(0.3 * sampleRate); // 300ms window for splitting
-		const searchRangeSamples = Math.floor(5 * sampleRate);      // 5 seconds search range
-		const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+		// const silenceWindowSamples = Math.floor(0.3 * TARGET_SAMPLE_RATE); // Replaced by CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES
+		// const searchRangeSamples = Math.floor(5 * TARGET_SAMPLE_RATE);      // Replaced by CHUNK_SPLIT_SEARCH_RANGE_SAMPLES
+		const audioCtxForChunking = new AudioContextConstructor(); // Use the same constructor for consistency
 		const chunks: Blob[] = [];
 		let startSample = 0;
-		const minChunkSamples = sampleRate; // discard segments shorter than 1s
+		// const minChunkSamples = TARGET_SAMPLE_RATE; // discard segments shorter than 1s - Replaced by MIN_CHUNK_SAMPLES
 		while (startSample < totalSamples) {
 			let endSample = Math.min(startSample + maxSamples, totalSamples);
 			if (endSample < totalSamples) {
 				let splitPoint: number | null = null;
 				const desiredSplit = endSample;
 				// search backward for a silent region
-				const backwardStart = Math.max(silenceWindowSamples, desiredSplit - searchRangeSamples);
+				const backwardStart = Math.max(CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES, desiredSplit - CHUNK_SPLIT_SEARCH_RANGE_SAMPLES);
 				for (let i = desiredSplit; i >= backwardStart; i--) {
 					let silent = true;
-					for (let j = i - silenceWindowSamples; j < i; j++) {
-						if (Math.abs(data[j]) > silenceThreshold) { silent = false; break; }
+					for (let j = i - CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES; j < i; j++) {
+						if (Math.abs(data[j]) > SILENCE_THRESHOLD) { silent = false; break; }
 					}
-					if (silent) { splitPoint = i - silenceWindowSamples; break; }
+					if (silent) { splitPoint = i - CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES; break; }
 				}
 				// if no silent point before, search forward
 				if (splitPoint === null) {
-					const forwardEnd = Math.min(totalSamples, desiredSplit + searchRangeSamples);
+					const forwardEnd = Math.min(totalSamples, desiredSplit + CHUNK_SPLIT_SEARCH_RANGE_SAMPLES);
 					for (let i = desiredSplit; i < forwardEnd; i++) {
 						let silent = true;
-						for (let j = i; j < i + silenceWindowSamples && j < totalSamples; j++) {
-							if (Math.abs(data[j]) > silenceThreshold) { silent = false; break; }
+						for (let j = i; j < i + CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES && j < totalSamples; j++) {
+							if (Math.abs(data[j]) > SILENCE_THRESHOLD) { silent = false; break; }
 						}
 						if (silent) { splitPoint = i; break; }
 					}
@@ -130,10 +174,10 @@ export class TranscriberService {
 					endSample = splitPoint;
 				}
 			}
-			const segmentBuf = audioCtx.createBuffer(1, endSample - startSample, sampleRate);
+			const segmentBuf = audioCtxForChunking.createBuffer(1, endSample - startSample, TARGET_SAMPLE_RATE);
 			segmentBuf.getChannelData(0).set(data.subarray(startSample, endSample));
 			const segmentSamples = endSample - startSample;
-			if (segmentSamples >= minChunkSamples) {
+			if (segmentSamples >= MIN_CHUNK_SAMPLES) {
 				chunks.push(this.bufferToWav(segmentBuf));
 			}
 			startSample = endSample;

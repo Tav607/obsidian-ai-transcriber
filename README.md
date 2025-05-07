@@ -27,12 +27,17 @@ An Obsidian plugin that uses AI to record and transcribe audio into structured M
 ### Recording Audio
 
 - Click the microphone icon in the left ribbon or run the **"Record Audio"** command from the command palette.
-- In the record modal, start/stop recording; then confirm to transcribe.
+- In the record modal, start recording. When done, you can choose to **Stop & Save** (saves the audio without transcribing) or **Stop & Transcribe** (saves audio and proceeds to transcription).
 
 ### Transcribing Existing Audio Files
 
 - Right-click any `.webm` or `.m4a` file in the file explorer.
 - Select **"Transcribe with AI"** to generate a transcript (raw or edited).
+
+### Editing Existing Transcripts
+
+- Open a raw transcript file, then run the **"Edit Transcript"** command from the command palette.
+- The plugin will then use the configured AI editor settings to process and refine the selected transcript.
 
 ### Transcript Output
 

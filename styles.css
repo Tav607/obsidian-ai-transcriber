@@ -12,3 +12,79 @@ If your plugin does not need CSS, delete this file.
     display: flex;
     gap: 8px;
 }
+
+/* Make all setting controls wider and of equal width */
+.setting-item-control {
+  flex: 0 0 400px !important;
+  max-width: 400px !important;
+}
+
+/* Ensure text inputs and textareas fill the control width */
+.setting-item-control input[type="text"],
+.setting-item-control textarea {
+  width: 100% !important;
+  box-sizing: border-box; /* Good practice for width calculation */
+}
+
+/* Prevent manual resizing of textareas */
+.setting-item-control textarea {
+  resize: none !important;
+}
+
+/* AI Transcriber Record Modal Styles */
+.ai-transcriber-record-modal h2 {
+  text-align: center; /* Center the modal title */
+  margin-bottom: 20px; /* Add some space below the title */
+}
+
+.ai-transcriber-record-modal .recorder-timer {
+  font-size: 2.5em; /* Larger timer text */
+  font-weight: bold;
+  text-align: center;
+  margin-top: 15px;
+  margin-bottom: 25px;
+  color: var(--text-normal);
+}
+
+.ai-transcriber-record-modal .recorder-button-container {
+  display: flex;
+  justify-content: center; /* Center buttons */
+  gap: 10px; /* Space between buttons */
+  margin-bottom: 10px;
+}
+
+.ai-transcriber-record-modal .recorder-button-container button {
+  padding: 10px 15px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px; /* Rounded corners like GitHub */
+  background-color: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+
+.ai-transcriber-record-modal .recorder-button-container button:hover:not([disabled]) {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--background-modifier-border-hover);
+}
+
+.ai-transcriber-record-modal .recorder-button-container button:active:not([disabled]) {
+  background-color: var(--background-modifier-active);
+  border-color: var(--background-modifier-border-active);
+}
+
+.ai-transcriber-record-modal .recorder-button-container button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Style for the primary action button (Record) */
+.ai-transcriber-record-modal .recorder-button-container button.mod-cta {
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent-hover);
+}
+
+.ai-transcriber-record-modal .recorder-button-container button.mod-cta:hover:not([disabled]) {
+  background-color: var(--interactive-accent-hover);
+}

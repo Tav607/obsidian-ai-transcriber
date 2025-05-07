@@ -53,24 +53,43 @@ export class EditorService {
 		if (settings.provider === 'gemini') {
 			// Use Google GenAI SDK for Gemini editing
 			const { GoogleGenAI } = await import('@google/genai');
-			const ai = new GoogleGenAI({ apiKey: settings.apiKey });
+			const genAI = new GoogleGenAI({ apiKey: settings.apiKey });
 			// Combine system prompt, user prompt, and transcript text
 			const geminiContent = settings.systemPrompt
 				? `${settings.systemPrompt}\n\n${settings.userPrompt ? `${settings.userPrompt}\n\n${text}` : text}`
 				: settings.userPrompt
 					? `${settings.userPrompt}\n\n${text}`
 					: text;
-			// Call Gemini model to edit the content
-			const geminiResponse = await ai.models.generateContent({
-				model: settings.model,
-				contents: geminiContent,
-				config: { temperature: settings.temperature },
-			});
-			const geminiResult = geminiResponse.text;
-			if (typeof geminiResult !== 'string') {
-				throw new Error('Invalid response from Gemini editing API');
+			
+			try {
+				const geminiResponse = await genAI.models.generateContent({
+					model: settings.model,
+					contents: [{ role: "user", parts: [{ text: geminiContent }] }],
+					config: { temperature: settings.temperature },
+				});
+
+				const geminiResult = geminiResponse.text;
+
+				if (typeof geminiResult === 'string') {
+					return geminiResult;
+				} else {
+					let detailedError = 'Invalid response from Gemini editing API: No text content found.';
+					if (geminiResponse.promptFeedback) {
+						detailedError += ` Prompt feedback: ${JSON.stringify(geminiResponse.promptFeedback)}`;
+						if (geminiResponse.promptFeedback.blockReason) {
+							detailedError += ` Block Reason: ${geminiResponse.promptFeedback.blockReason}`;
+							if (geminiResponse.promptFeedback.blockReasonMessage) {
+								detailedError += ` (${geminiResponse.promptFeedback.blockReasonMessage})`;
+							}
+						}
+					}
+					console.error('Full Gemini API response (when text is undefined):', JSON.stringify(geminiResponse, null, 2));
+					throw new Error(detailedError);
+				}
+			} catch (error: any) {
+				console.error('Error during Gemini API call or processing:', error);
+				throw new Error(`Gemini API request failed: ${error.message || error.toString()}`);
 			}
-			return geminiResult;
 		}
 
 		throw new Error(`Unsupported editing provider: ${settings.provider}`);

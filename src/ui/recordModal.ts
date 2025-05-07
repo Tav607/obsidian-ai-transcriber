@@ -13,6 +13,7 @@ export default class RecordModal extends Modal {
 	private recordBtn: HTMLElement;
 	private pauseBtn: HTMLElement;
 	private stopBtn: HTMLElement;
+	private stopAndSaveBtn: HTMLElement;
 
 	constructor(app: App, plugin: ObsidianAITranscriber) {
 		super(app);
@@ -24,16 +25,19 @@ export default class RecordModal extends Modal {
 	onOpen() {
 		const { contentEl } = this;
 		contentEl.empty();
+		contentEl.addClass('ai-transcriber-record-modal');
 		contentEl.createEl('h2', { text: 'Record Audio' });
 
 		// Elapsed time display
 		this.timerEl = contentEl.createEl('div', { cls: 'recorder-timer', text: '00:00' });
 
-		const buttonContainer = contentEl.createDiv({ cls: 'button-container' });
-		this.recordBtn = buttonContainer.createEl('button', { text: 'Record' });
+		const buttonContainer = contentEl.createDiv({ cls: ['recorder-button-container', 'button-container'] });
+		this.recordBtn = buttonContainer.createEl('button', { text: 'Record', cls: 'mod-cta' });
 		this.pauseBtn = buttonContainer.createEl('button', { text: 'Pause' });
 		this.pauseBtn.setAttr('disabled', 'true');
-		this.stopBtn = buttonContainer.createEl('button', { text: 'Stop' });
+		this.stopAndSaveBtn = buttonContainer.createEl('button', { text: 'Stop & Save' });
+		this.stopAndSaveBtn.setAttr('disabled', 'true');
+		this.stopBtn = buttonContainer.createEl('button', { text: 'Stop & Transcribe' });
 		this.stopBtn.setAttr('disabled', 'true');
 
 		// Initialize UI and timer
@@ -53,6 +57,7 @@ export default class RecordModal extends Modal {
 				this.recordBtn.setAttr('disabled', 'true');
 				this.pauseBtn.removeAttribute('disabled');
 				this.stopBtn.removeAttribute('disabled');
+				this.stopAndSaveBtn.removeAttribute('disabled');
 				this.pauseBtn.setText('Pause');
 				this.isPaused = false;
 			} catch (error: any) {
@@ -79,6 +84,7 @@ export default class RecordModal extends Modal {
 
 		this.stopBtn.onclick = async () => {
 			this.stopBtn.setAttr('disabled', 'true');
+			this.stopAndSaveBtn.setAttr('disabled', 'true');
 			this.pauseBtn.setAttr('disabled', 'true');
 			this.plugin.updateStatus('AI Transcribing...');
 			new Notice('Stopping recording…');
@@ -132,6 +138,29 @@ export default class RecordModal extends Modal {
 				this.close();
 			}
 		};
+
+		// Handler for "Stop & Save" button
+		this.stopAndSaveBtn.onclick = async () => {
+			this.stopAndSaveBtn.setAttr('disabled', 'true');
+			this.stopBtn.setAttr('disabled', 'true');
+			this.pauseBtn.setAttr('disabled', 'true');
+			this.recordBtn.setAttr('disabled', 'true');
+			this.plugin.updateStatus('Saving recording...');
+			new Notice('Saving recording...');
+			try {
+				const result: RecordingResult = await this.recorder.stop();
+				const audioDir = this.plugin.settings.transcriber.audioDir;
+				const audioPath = await this.fileService.saveRecording(result.blob, audioDir);
+				new Notice(`Recording saved to ${audioPath}`);
+				this.plugin.updateStatus('Transcriber Idle');
+			} catch (error: any) {
+				new Notice(`Error saving recording: ${error.message}`);
+				console.error(error);
+				this.plugin.updateStatus('Transcriber Idle');
+			} finally {
+				this.close();
+			}
+		};
 	}
 
 	onClose() {
@@ -145,11 +174,13 @@ export default class RecordModal extends Modal {
 			this.recordBtn.setAttr('disabled', 'true');
 			this.pauseBtn.removeAttribute('disabled');
 			this.stopBtn.removeAttribute('disabled');
+			this.stopAndSaveBtn.removeAttribute('disabled');
 			this.pauseBtn.setText(this.recorder.isPaused() ? 'Resume' : 'Pause');
 		} else {
 			this.recordBtn.removeAttribute('disabled');
 			this.pauseBtn.setAttr('disabled', 'true');
 			this.stopBtn.setAttr('disabled', 'true');
+			this.stopAndSaveBtn.setAttr('disabled', 'true');
 		}
 	}
 

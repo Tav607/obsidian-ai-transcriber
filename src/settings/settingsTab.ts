@@ -63,7 +63,7 @@ export default class SettingsTab extends PluginSettingTab {
 			);
 		new Setting(containerEl)
 			.setName('Temperature')
-			.setDesc('Enter a value between 0.0 and 1.0. Suggested value: 0.1.')
+			.setDesc('Enter a value between 0.0 and 1.0. Suggested value: 0.2.')
 			.addText(text => text
 				.setPlaceholder('0.0-1.0')
 				.setValue(this.plugin.settings.transcriber.temperature.toString())

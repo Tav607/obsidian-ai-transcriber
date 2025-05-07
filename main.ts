@@ -31,18 +31,63 @@ export default class ObsidianAITranscriber extends Plugin {
 		this.statusBarItem = this.addStatusBarItem();
 		this.updateStatus('Transcriber Idle');
 
-		// Ribbon button for non-streaming recording
+		// Ribbon button for recording
 		const ribbonIconEl = this.addRibbonIcon('microphone', 'Record Audio', () => {
 			new RecordModal(this.app, this).open();
 		});
 		ribbonIconEl.addClass('obsidian-ai-transcriber-ribbon');
 
-		// Command for non-streaming recording
+		// Command for recording
 		this.addCommand({
 			id: 'obsidian-ai-transcriber-record',
-			name: 'Record Audio (Non-Streaming)',
+			name: 'Record Audio',
 			callback: () => {
 				new RecordModal(this.app, this).open();
+			}
+		});
+
+		// Command for editing the current raw transcript
+		this.addCommand({
+			id: 'obsidian-ai-transcriber-edit-transcript',
+			name: 'Edit Current Transcript with AI',
+			editorCallback: async (editor: Editor, view: MarkdownView) => {
+				const file = view.file;
+				if (!file || file.extension !== 'md') {
+					new Notice('Please open a Markdown file to edit.');
+					return;
+				}
+
+				const originalText = editor.getValue();
+				if (!originalText.trim()) {
+					new Notice('The file is empty.');
+					return;
+				}
+
+				if (!this.settings.editor.enabled) {
+					new Notice('AI Editor is not enabled in settings.');
+					return;
+				}
+
+				this.updateStatus('AI Editing...');
+				new Notice('Editing transcript with AI…');
+
+				try {
+					const editedText = await this.editorService.edit(originalText, this.settings.editor);
+					const dir = file.parent ? file.parent.path : this.settings.transcriber.transcriptDir; // Use file's directory or default
+					const baseName = file.basename.replace(/_raw_transcript$/, '').replace(/_edited_transcript$/, ''); // Remove existing suffixes
+					
+					const editedFileName = `${baseName}_edited_transcript.md`;
+					const editedPath = await this.fileService.saveTextWithName(editedText, dir, editedFileName);
+					
+					new Notice(`Edited transcript saved to ${editedPath}`);
+					await this.fileService.openFile(editedPath);
+					this.updateStatus('Transcriber Idle');
+
+				} catch (error: any) {
+					new Notice(`Error editing transcript: ${error.message}`);
+					console.error('Error editing transcript:', error);
+					this.updateStatus('Transcriber Idle');
+				}
 			}
 		});
 
