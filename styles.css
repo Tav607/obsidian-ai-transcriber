@@ -7,30 +7,6 @@ If your plugin does not need CSS, delete this file.
 
 */
 
-/* Add spacing for record modal buttons */
-.button-container {
-    display: flex;
-    gap: 8px;
-}
-
-/* Make all setting controls wider and of equal width */
-.setting-item-control {
-  flex: 0 0 400px !important;
-  max-width: 400px !important;
-}
-
-/* Ensure text inputs and textareas fill the control width */
-.setting-item-control input[type="text"],
-.setting-item-control textarea {
-  width: 100% !important;
-  box-sizing: border-box; /* Good practice for width calculation */
-}
-
-/* Prevent manual resizing of textareas */
-.setting-item-control textarea {
-  resize: none !important;
-}
-
 /* AI Transcriber Record Modal Styles */
 .ai-transcriber-record-modal h2 {
   text-align: center; /* Center the modal title */
@@ -87,4 +63,28 @@ If your plugin does not need CSS, delete this file.
 
 .ai-transcriber-record-modal .recorder-button-container button.mod-cta:hover:not([disabled]) {
   background-color: var(--interactive-accent-hover);
+}
+
+/* Add spacing for record modal buttons */
+.ai-transcriber-record-modal .button-container {
+    display: flex;
+    gap: 8px;
+}
+
+/* Make all setting controls wider and of equal width */
+.ai-transcriber-settings .setting-item-control {
+    flex: 0 0 400px !important;
+    max-width: 400px !important;
+}
+
+/* Ensure text inputs and textareas fill the control width */
+.ai-transcriber-settings .setting-item-control input[type="text"],
+.ai-transcriber-settings .setting-item-control textarea {
+    width: 100% !important;
+    box-sizing: border-box; /* Good practice for width calculation */
+}
+
+/* Prevent manual resizing of textareas */
+.ai-transcriber-settings .setting-item-control textarea {
+    resize: none !important;
 }

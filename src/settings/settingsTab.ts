@@ -13,6 +13,7 @@ export default class SettingsTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+		containerEl.addClass('ai-transcriber-settings');
 
 		// Transcriber Settings
 		containerEl.createEl('h2', { text: '🎙️ Transcriber Settings' });
