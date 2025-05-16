@@ -1,4 +1,4 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
+import { Editor, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import RecordModal from './src/ui/recordModal';
 import { RecorderService } from './src/services/recorder';
 import { FileService } from './src/services/file';
@@ -83,8 +83,8 @@ export default class ObsidianAITranscriber extends Plugin {
 					await this.fileService.openFile(editedPath);
 					this.updateStatus('Transcriber Idle');
 
-				} catch (error: any) {
-					new Notice(`Error editing transcript: ${error.message}`);
+				} catch (error: unknown) {
+					new Notice(`Error editing transcript: ${(error as Error).message}`);
 					console.error('Error editing transcript:', error);
 					this.updateStatus('Transcriber Idle');
 				}
@@ -145,8 +145,8 @@ export default class ObsidianAITranscriber extends Plugin {
 										await this.fileService.openFile(transcriptPath);
 										this.updateStatus('Transcriber Idle');
 									}
-								} catch (error: any) {
-									new Notice(`Error: ${error.message}`);
+								} catch (error: unknown) {
+									new Notice(`Error: ${(error as Error).message}`);
 									console.error(error);
 									this.updateStatus('Transcriber Idle');
 								}

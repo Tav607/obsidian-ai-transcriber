@@ -11,7 +11,7 @@ export class RecorderService {
 	private pauseTime = 0;
 	private totalPausedTime = 0;
 	private resolveStop: (result: RecordingResult) => void;
-	private rejectStop: (reason?: any) => void;
+	private rejectStop: (reason?: unknown) => void;
 	private stopPromise: Promise<RecordingResult>;
 	private stream: MediaStream | null = null;
 
@@ -34,17 +34,21 @@ export class RecorderService {
 		this.recordedChunks = [];
 		this.totalPausedTime = 0;
 		this.startTime = Date.now();
-		this.mediaRecorder!.start();
+		if (this.mediaRecorder) {
+			this.mediaRecorder.start();
+		}
 		// Prepare promise for stop() to return recording result
 		this.stopPromise = new Promise<RecordingResult>((resolve, reject) => {
 			this.resolveStop = resolve;
 			this.rejectStop = reject;
-			this.mediaRecorder!.onstop = () => {
-				const blob = new Blob(this.recordedChunks, { type: 'audio/webm;codecs=opus' });
-				const duration = (Date.now() - this.startTime - this.totalPausedTime) / 1000;
-				const size = blob.size;
-				resolve({ blob, duration, size });
-			};
+			if (this.mediaRecorder) {
+				this.mediaRecorder.onstop = () => {
+					const blob = new Blob(this.recordedChunks, { type: 'audio/webm;codecs=opus' });
+					const duration = (Date.now() - this.startTime - this.totalPausedTime) / 1000;
+					const size = blob.size;
+					resolve({ blob, duration, size });
+				};
+			}
 		});
 		// Return immediately once recording has started
 		return;
@@ -71,7 +75,7 @@ export class RecorderService {
 		}
 		// Then stop the media recorder to finalize the blob
 		if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-			this.mediaRecorder!.stop();
+			this.mediaRecorder.stop();
 		}
 		// Wait for recording result
 		const result = await this.stopPromise;

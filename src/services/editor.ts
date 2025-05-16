@@ -86,9 +86,9 @@ export class EditorService {
 					console.error('Full Gemini API response (when text is undefined):', JSON.stringify(geminiResponse, null, 2));
 					throw new Error(detailedError);
 				}
-			} catch (error: any) {
+			} catch (error: unknown) {
 				console.error('Error during Gemini API call or processing:', error);
-				throw new Error(`Gemini API request failed: ${error.message || error.toString()}`);
+				throw new Error(`Gemini API request failed: ${(error as Error).message || 'Unknown error'}`);
 			}
 		}
 

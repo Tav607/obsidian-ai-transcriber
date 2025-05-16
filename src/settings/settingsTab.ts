@@ -1,6 +1,5 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import ObsidianAITranscriber from '../../main';
-import { PluginSettings } from './types';
 
 export default class SettingsTab extends PluginSettingTab {
 	plugin: ObsidianAITranscriber;

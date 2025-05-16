@@ -1,5 +1,9 @@
 import OpenAI from "openai";
 
+interface GeminiContentPart {
+	text?: string;
+}
+
 export class TranscriberService {
 	private async blobToBase64(blob: Blob): Promise<string> {
 		return new Promise((resolve, reject) => {
@@ -83,7 +87,7 @@ export class TranscriberService {
 				const responseData = await response.json();
 				// Parse native generateContent response structure
 				if (responseData.candidates && responseData.candidates.length > 0 && responseData.candidates[0].content && responseData.candidates[0].content.parts) {
-					fullText += responseData.candidates[0].content.parts.map((part: any) => part.text || '').join('');
+					fullText += responseData.candidates[0].content.parts.map((part: GeminiContentPart) => part.text || '').join('');
 				} else {
 					console.warn('Gemini generateContent response structure unexpected:', responseData);
 					throw new Error('Gemini Transcription error: Unexpected response structure.');

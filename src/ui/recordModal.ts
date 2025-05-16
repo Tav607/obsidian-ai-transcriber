@@ -60,8 +60,8 @@ export default class RecordModal extends Modal {
 				this.stopAndSaveBtn.removeAttribute('disabled');
 				this.pauseBtn.setText('Pause');
 				this.isPaused = false;
-			} catch (error: any) {
-				new Notice(`Error starting recording: ${error.message}`);
+			} catch (error: unknown) {
+				new Notice(`Error starting recording: ${(error as Error).message}`);
 				console.error(error);
 			}
 		};
@@ -130,8 +130,8 @@ export default class RecordModal extends Modal {
 					await this.fileService.openFile(transcriptPath);
 					this.plugin.updateStatus('Transcriber Idle');
 				}
-			} catch (error: any) {
-				new Notice(`Error: ${error.message}`);
+			} catch (error: unknown) {
+				new Notice(`Error: ${(error as Error).message}`);
 				console.error(error);
 				this.plugin.updateStatus('Transcriber Idle');
 			} finally {
@@ -153,8 +153,8 @@ export default class RecordModal extends Modal {
 				const audioPath = await this.fileService.saveRecording(result.blob, audioDir);
 				new Notice(`Recording saved to ${audioPath}`);
 				this.plugin.updateStatus('Transcriber Idle');
-			} catch (error: any) {
-				new Notice(`Error saving recording: ${error.message}`);
+			} catch (error: unknown) {
+				new Notice(`Error saving recording: ${(error as Error).message}`);
 				console.error(error);
 				this.plugin.updateStatus('Transcriber Idle');
 			} finally {
