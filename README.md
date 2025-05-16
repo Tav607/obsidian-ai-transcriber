@@ -2,10 +2,6 @@
 
 An Obsidian plugin that uses AI to record and transcribe audio into structured Markdown notes, with optional AI-based editing of transcripts.
 
-> **Plugin ID:** `obsidian-ai-transcriber`
-> **Version:** 1.0.0
-> **Author:** Tav607 <https://github.com/Tav607>
-
 ## Features
 
 - 🎤 **Record Audio**: Open a modal or click the ribbon icon to record audio within Obsidian.
@@ -50,7 +46,7 @@ An Obsidian plugin that uses AI to record and transcribe audio into structured M
 Open **Settings → Obsidian AI Transcriber** to configure:
 
 - **Transcriber Settings**:
-  - Provider: `openai` or `gemini` (Note: Gemini has not been implemented yet; will update in later versions)
+  - Provider: `openai` or `gemini`
   - API Key: your service key
   - Model: transcription model (e.g., `gpt-4o-transcribe`)
   - Prompt: custom system prompt for transcription
@@ -67,4 +63,4 @@ Open **Settings → Obsidian AI Transcriber** to configure:
 
 ## License
 
-This plugin is released under the [MIT License](LICENSE).
+This plugin is released under the [Dynalist License](LICENSE).
