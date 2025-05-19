@@ -5,10 +5,11 @@ An Obsidian plugin that uses AI to record and transcribe audio into structured M
 ## Features
 
 - 🎤 **Record Audio**: Open a modal or click the ribbon icon to record audio within Obsidian.
-- 🤖 **AI Transcription**: Transcribe recorded or imported audio files (`.webm`, `.m4a`) to text using OpenAI or Gemini models.
-- ✍️ **AI Editing** (optional): Automatically refine raw transcripts into structured meeting notes with summary, key points, and cleaned transcript.
+- 🤖 **AI Transcription**: Transcribe recorded or imported audio files (`.webm`, `.m4a`, `.mp3`) to text using OpenAI or Gemini models.
+- ✍️ **AI Editing** (optional): Automatically refine raw transcripts into structured notes (e.g., meeting minutes). Utilizes a customizable System Prompt via a template management system.
+- 🎨 **System Prompt Templates**: Create, manage, and select different system prompts for the AI Editor to handle various transcript processing needs.
 - 💾 **Flexible File Saving**: Save raw and/or edited transcripts to specified vault subdirectories.
-- ⚙️ **Settings Tab**: Configure transcription and editing providers, models, prompts, temperature, and output directories.
+- ⚙️ **Settings Tab**: Configure transcription and editing providers, models, API keys, manage System Prompt templates, set editor user prompt, temperature, and output directories.
 - 🔄 **Context Menu**: Right-click an audio file in the file explorer to transcribe it directly.
 - 📊 **Status Bar**: View plugin status (Idle, Recording…, Transcribing…, Editing…) in the status bar (bottom-right corner).
 
@@ -23,17 +24,30 @@ An Obsidian plugin that uses AI to record and transcribe audio into structured M
 ### Recording Audio
 
 - Click the microphone icon in the left ribbon or run the **"Record Audio"** command from the command palette.
-- In the record modal, start recording. When done, you can choose to **Stop & Save** (saves the audio without transcribing) or **Stop & Transcribe** (saves audio and proceeds to transcription).
+- In the record modal, start recording. When done, you can choose:
+    - **Stop & Save**: Saves the audio file to the configured "Audio Directory" without transcribing.
+    - **Stop & Transcribe**: Saves the audio file and proceeds to transcription.
+        - If AI Editing is enabled in settings, a modal will first appear asking you to select a System Prompt Template.
+        - If you cancel template selection, only the audio file is saved, and transcription is aborted.
+        - If confirmed, the audio is transcribed, and then the transcript is processed by the AI editor using the selected template.
 
 ### Transcribing Existing Audio Files
 
-- Right-click any `.webm` or `.m4a` file in the file explorer.
-- Select **"Transcribe with AI"** to generate a transcript (raw or edited).
+- Right-click any `.webm`, `.m4a`, or `.mp3` file in the file explorer.
+- Select **"Transcribe with AI"**.
+    - If AI Editing is enabled in settings, a modal will first appear asking you to select a System Prompt Template.
+    - If you cancel template selection, the entire transcription task is aborted.
+    - If confirmed, the audio is transcribed, and then the transcript is processed by the AI editor using the selected template.
+    - If AI Editing is disabled, the audio is transcribed, and the raw transcript is saved.
 
 ### Editing Existing Transcripts
 
-- Open a raw transcript file, then run the **"Edit Transcript"** command from the command palette.
-- The plugin will then use the configured AI editor settings to process and refine the selected transcript.
+- Open a raw transcript file (typically a `.md` file).
+- Run the **"Edit Current Transcript with AI"** command from the command palette.
+    - A modal will appear asking you to select a System Prompt Template to use for editing.
+    - If you cancel template selection, the editing process is aborted.
+    - If confirmed, the AI editor will process the current text using the selected template.
+- The plugin will then use the configured AI editor settings and the selected System Prompt to process and refine the transcript.
 
 ### Transcript Output
 
@@ -49,17 +63,23 @@ Open **Settings → Obsidian AI Transcriber** to configure:
   - Provider: `openai` or `gemini`
   - API Key: your service key
   - Model: transcription model (e.g., `gpt-4o-transcribe`)
-  - Prompt: custom system prompt for transcription
+  - Prompt: custom system prompt for transcription (this is separate from the editor's system prompts)
   - Temperature: sampling temperature
   - Audio Directory: where to save recorded audio
   - Transcript Directory: vault subfolder for transcripts
 
 - **Editor Settings**:
-  - Enable Editing: toggle AI post-editing
-  - Provider / API Key / Model: settings for AI editor
-  - System Prompt / User Prompt: prompts for structuring meeting notes
-  - Temperature: sampling temperature
-  - Keep Original: save raw transcript alongside edited version
+  - Enable Editing: toggle AI post-editing.
+  - Provider / API Key / Model: settings for the AI editor.
+  - **System Prompt Templates**:
+    - **System Prompt Selector**: Choose the currently active template for general use (when not explicitly selected before an action).
+    - **System Prompt Template Name**: Edit the name of the selected custom template (the "Default" template name cannot be changed).
+    - **System Prompt**: Edit the content of the selected template.
+    - **Delete Template**: Delete the currently selected custom template.
+    - **New System Prompt Template**: Create new custom templates.
+  - **User Prompt**: Specify user-level instructions for the editor (this prompt is sent along with the selected system prompt and the transcript).
+  - Temperature: sampling temperature for the editor.
+  - Keep Original: save the raw transcript alongside the edited version.
 
 ## License
 
