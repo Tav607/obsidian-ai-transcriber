@@ -14,6 +14,9 @@ export class RecorderService {
 	private rejectStop: (reason?: unknown) => void;
 	private stopPromise: Promise<RecordingResult>;
 	private stream: MediaStream | null = null;
+	private audioContext: AudioContext | null = null;
+	private analyserNode: AnalyserNode | null = null;
+	private sourceNode: MediaStreamAudioSourceNode | null = null;
 
 	constructor() {}
 
@@ -25,6 +28,19 @@ export class RecorderService {
 				this.recordedChunks.push(e.data);
 			}
 		};
+
+		// Initialize AudioContext and AnalyserNode for visualization
+		const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
+		if (AudioContextConstructor) {
+			this.audioContext = new AudioContextConstructor();
+			this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);
+			this.analyserNode = this.audioContext.createAnalyser();
+			this.analyserNode.fftSize = 64; // Smaller FFT size for basic waveform
+			this.sourceNode.connect(this.analyserNode);
+			// Note: We don't connect analyserNode to destination, as we only want to analyze, not playback through it.
+		} else {
+			console.warn('Web Audio API not supported, waveform visualization disabled.');
+		}
 	}
 
 	async start(): Promise<void> {
@@ -73,6 +89,20 @@ export class RecorderService {
 		if (this.stream) {
 			this.stream.getTracks().forEach(track => track.stop());
 		}
+
+		// Disconnect and clean up audio context nodes
+		if (this.sourceNode) {
+			this.sourceNode.disconnect();
+			this.sourceNode = null;
+		}
+		if (this.analyserNode) {
+			this.analyserNode = null; // No disconnect method for AnalyserNode itself, just dereference
+		}
+		if (this.audioContext && this.audioContext.state !== 'closed') {
+			await this.audioContext.close();
+			this.audioContext = null;
+		}
+
 		// Then stop the media recorder to finalize the blob
 		if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
 			this.mediaRecorder.stop();
@@ -103,5 +133,9 @@ export class RecorderService {
 			return (this.pauseTime - this.startTime - this.totalPausedTime) / 1000;
 		}
 		return (Date.now() - this.startTime - this.totalPausedTime) / 1000;
+	}
+
+	public getAnalyserNode(): AnalyserNode | null {
+		return this.analyserNode;
 	}
 } 
