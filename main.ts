@@ -3,9 +3,10 @@ import RecordModal from './src/ui/recordModal';
 import { RecorderService } from './src/services/recorder';
 import { FileService } from './src/services/file';
 import SettingsTab from './src/settings/settingsTab';
-import { PluginSettings, DEFAULT_SETTINGS } from './src/settings/types';
+import { PluginSettings, DEFAULT_SETTINGS, SystemPromptTemplate } from './src/settings/types';
 import { TranscriberService } from './src/services/transcriber';
 import { EditorService } from './src/services/editor';
+import { SystemPromptTemplateSelectionModal } from './src/ui/SystemPromptTemplateSelectionModal';
 
 // Remember to rename these classes and interfaces!
 
@@ -64,30 +65,45 @@ export default class ObsidianAITranscriber extends Plugin {
 				}
 
 				if (!this.settings.editor.enabled) {
-					new Notice('AI Editor is not enabled in settings.');
+					new Notice('AI Editor is not enabled in settings. Editing skipped.');
+					// If editor is not enabled, we might not want to proceed or just treat original as final.
+					// For now, let's assume the command is specifically for AI editing.
 					return;
 				}
 
-				this.updateStatus('AI Editing...');
-				new Notice('Editing transcript with AI…');
+				// Show template selection modal
+				new SystemPromptTemplateSelectionModal(this.app, this, async (selectedTemplateName) => {
+					if (!selectedTemplateName) {
+						new Notice('Template selection cancelled. Editing aborted.');
+						return;
+					}
 
-				try {
-					const editedText = await this.editorService.edit(originalText, this.settings.editor);
-					const dir = file.parent ? file.parent.path : this.settings.transcriber.transcriptDir; // Use file's directory or default
-					const baseName = file.basename.replace(/_raw_transcript$/, '').replace(/_edited_transcript$/, ''); // Remove existing suffixes
-					
-					const editedFileName = `${baseName}_edited_transcript.md`;
-					const editedPath = await this.fileService.saveTextWithName(editedText, dir, editedFileName);
-					
-					new Notice(`Edited transcript saved to ${editedPath}`);
-					await this.fileService.openFile(editedPath);
-					this.updateStatus('Transcriber Idle');
+					const selectedTemplate = this.settings.editor.systemPromptTemplates.find(t => t.name === selectedTemplateName);
+					if (!selectedTemplate) {
+						new Notice('Selected template not found. Editing aborted.');
+						return;
+					}
 
-				} catch (error: unknown) {
-					new Notice(`Error editing transcript: ${(error as Error).message}`);
-					console.error('Error editing transcript:', error);
-					this.updateStatus('Transcriber Idle');
-				}
+					this.updateStatus('AI Editing...');
+					new Notice('Editing transcript with AI using template: ' + selectedTemplateName);
+
+					try {
+						const editedText = await this.editorService.edit(originalText, this.settings.editor, selectedTemplate.prompt);
+						const dir = file.parent ? file.parent.path : this.settings.transcriber.transcriptDir;
+						const baseName = file.basename.replace(/_raw_transcript$/, '').replace(/_edited_transcript$/, '');
+						
+						const editedFileName = `${baseName}_edited_transcript.md`;
+						const editedPath = await this.fileService.saveTextWithName(editedText, dir, editedFileName);
+						
+						new Notice(`Edited transcript saved to ${editedPath}`);
+						await this.fileService.openFile(editedPath);
+					} catch (error: unknown) {
+						new Notice(`Error editing transcript: ${(error as Error).message}`);
+						console.error('Error editing transcript:', error);
+					} finally {
+						this.updateStatus('Transcriber Idle');
+					}
+				}).open();
 			}
 		});
 
@@ -102,53 +118,67 @@ export default class ObsidianAITranscriber extends Plugin {
 						item.setTitle('Transcribe with AI')
 							.setIcon('microphone')
 							.onClick(async () => {
-								this.updateStatus('AI Transcribing...');
-								new Notice('Transcribing audio…');
-								try {
-									const arrayBuffer = await this.app.vault.readBinary(file);
-									// Determine MIME type based on file extension
-									let mime = '';
-									if (file.extension === 'm4a') {
-										mime = 'audio/mp4';
-									} else if (file.extension === 'webm') {
-										mime = 'audio/webm';
-									} else if (file.extension === 'mp3') {
-										mime = 'audio/mpeg';
-									}
-									const blob = new Blob([arrayBuffer], { type: mime });
-									const transcript = await this.transcriber.transcribe(blob, this.settings.transcriber);
-									const dir = this.settings.transcriber.transcriptDir;
-									// Extract base name from audio file name
-									const audioFileName = file.name;
-									const baseName = audioFileName.replace(/\.[^/.]+$/, '');
-									if (this.settings.editor.enabled) {
-										this.updateStatus('AI Editing...');
-										if (this.settings.editor.keepOriginal) {
-											// Save raw transcript with custom name
+								const processAudioFile = async (systemPromptOverride?: string) => {
+									this.updateStatus('AI Transcribing...');
+									new Notice('Transcribing audio…');
+									try {
+										const arrayBuffer = await this.app.vault.readBinary(file);
+										let mime = '';
+										if (file.extension === 'm4a') mime = 'audio/mp4';
+										else if (file.extension === 'webm') mime = 'audio/webm';
+										else if (file.extension === 'mp3') mime = 'audio/mpeg';
+										const blob = new Blob([arrayBuffer], { type: mime });
+										const transcript = await this.transcriber.transcribe(blob, this.settings.transcriber);
+										const dir = this.settings.transcriber.transcriptDir;
+										const audioFileName = file.name;
+										const baseName = audioFileName.replace(/\.[^/.]+$/, '');
+
+										if (this.settings.editor.enabled && systemPromptOverride !== undefined) {
+											this.updateStatus('AI Editing...');
+											if (this.settings.editor.keepOriginal) {
+												const rawFileName = `${baseName}_raw_transcript.md`;
+												const rawPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
+												new Notice(`Raw transcript saved to ${rawPath}`);
+											}
+											new Notice('Editing transcript with AI using the selected template.'); // User already saw template name
+											const edited = await this.editorService.edit(transcript, this.settings.editor, systemPromptOverride);
+											const editedFileName = `${baseName}_edited_transcript.md`;
+											const editedPath = await this.fileService.saveTextWithName(edited, dir, editedFileName);
+											new Notice(`Edited transcript saved to ${editedPath}`);
+											await this.fileService.openFile(editedPath);
+										} else {
+											// Editor not enabled or no systemPromptOverride (should not happen if logic is correct)
 											const rawFileName = `${baseName}_raw_transcript.md`;
-											const rawPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
-											new Notice(`Transcript saved to ${rawPath}`);
+											const transcriptPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
+											new Notice(`Transcript saved to ${transcriptPath}`);
+											await this.fileService.openFile(transcriptPath);
 										}
-										new Notice('Editing transcript…');
-										const edited = await this.editorService.edit(transcript, this.settings.editor);
-										// Save edited transcript with custom name
-										const editedFileName = `${baseName}_edited_transcript.md`;
-										const editedPath = await this.fileService.saveTextWithName(edited, dir, editedFileName);
-										new Notice(`Edited transcript saved to ${editedPath}`);
-										await this.fileService.openFile(editedPath);
-										this.updateStatus('Transcriber Idle');
-									} else {
-										// Save raw transcript with custom name (no editing)
-										const rawFileName = `${baseName}_raw_transcript.md`;
-										const transcriptPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
-										new Notice(`Transcript saved to ${transcriptPath}`);
-										await this.fileService.openFile(transcriptPath);
+									} catch (error: unknown) {
+										new Notice(`Error: ${(error as Error).message}`);
+										console.error(error);
+									} finally {
 										this.updateStatus('Transcriber Idle');
 									}
-								} catch (error: unknown) {
-									new Notice(`Error: ${(error as Error).message}`);
-									console.error(error);
-									this.updateStatus('Transcriber Idle');
+								};
+
+								if (this.settings.editor.enabled) {
+									new SystemPromptTemplateSelectionModal(this.app, this, async (selectedTemplateName) => {
+										if (!selectedTemplateName) {
+											new Notice('Template selection cancelled. Transcription aborted.');
+											this.updateStatus('Transcriber Idle'); // Reset status
+											return;
+										}
+										const selectedTemplate = this.settings.editor.systemPromptTemplates.find(t => t.name === selectedTemplateName);
+										if (!selectedTemplate) {
+											new Notice('Selected template not found. Transcription aborted.');
+											this.updateStatus('Transcriber Idle'); // Reset status
+											return;
+										}
+										await processAudioFile(selectedTemplate.prompt);
+									}).open();
+								} else {
+									// Editor not enabled, proceed directly with transcription and saving raw.
+									await processAudioFile(); 
 								}
 							});
 					});

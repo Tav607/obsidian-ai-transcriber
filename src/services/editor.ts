@@ -5,15 +5,36 @@ export class EditorService {
 	 * Edit and format transcription text using the configured API provider.
 	 * @param text The transcript text to edit
 	 * @param settings EditorSettings from plugin configuration
+	 * @param systemPromptOverride Optional: A specific system prompt to use for this edit, overriding settings.
 	 */
-	async edit(text: string, settings: EditorSettings): Promise<string> {
+	async edit(text: string, settings: EditorSettings, systemPromptOverride?: string): Promise<string> {
 		if (!settings.apiKey) {
 			throw new Error('Editor API key is not configured');
 		}
+
+		// Determine the system prompt to use
+		let systemPromptToUse = '';
+		if (systemPromptOverride !== undefined) {
+			systemPromptToUse = systemPromptOverride;
+		} else if (settings.systemPromptTemplates && settings.systemPromptTemplates.length > 0) {
+			const activeTemplate = settings.systemPromptTemplates.find(
+				t => t.name === settings.activeSystemPromptTemplateName
+			);
+			if (activeTemplate) {
+				systemPromptToUse = activeTemplate.prompt;
+			} else {
+				// Fallback to the first template if active one not found or name is out of sync
+				const firstTemplate = settings.systemPromptTemplates[0];
+				if (firstTemplate) {
+					systemPromptToUse = firstTemplate.prompt;
+				}
+			}
+		}
+
 		// Build messages array for chat completion
 		const messages: { role: string; content: string }[] = [];
-		if (settings.systemPrompt) {
-			messages.push({ role: 'system', content: settings.systemPrompt });
+		if (systemPromptToUse) {
+			messages.push({ role: 'system', content: systemPromptToUse });
 		}
 		// Combine user prompt and transcript text
 		const content = settings.userPrompt
@@ -55,8 +76,8 @@ export class EditorService {
 			const { GoogleGenAI } = await import('@google/genai');
 			const genAI = new GoogleGenAI({ apiKey: settings.apiKey });
 			// Combine system prompt, user prompt, and transcript text
-			const geminiContent = settings.systemPrompt
-				? `${settings.systemPrompt}\n\n${settings.userPrompt ? `${settings.userPrompt}\n\n${text}` : text}`
+			const geminiContent = systemPromptToUse
+				? `${systemPromptToUse}\n\n${settings.userPrompt ? `${settings.userPrompt}\n\n${text}` : text}`
 				: settings.userPrompt
 					? `${settings.userPrompt}\n\n${text}`
 					: text;

@@ -2,6 +2,7 @@ import { App, Modal, Notice } from 'obsidian';
 import ObsidianAITranscriber from '../../main';
 import { RecorderService, RecordingResult } from '../services/recorder';
 import { FileService } from '../services/file';
+import { SystemPromptTemplateSelectionModal } from './SystemPromptTemplateSelectionModal';
 
 export default class RecordModal extends Modal {
 	private plugin: ObsidianAITranscriber;
@@ -86,55 +87,82 @@ export default class RecordModal extends Modal {
 			this.stopBtn.setAttr('disabled', 'true');
 			this.stopAndSaveBtn.setAttr('disabled', 'true');
 			this.pauseBtn.setAttr('disabled', 'true');
-			this.plugin.updateStatus('AI Transcribing...');
 			new Notice('Stopping recording…');
 			try {
-				// Stop and save recording
 				const result: RecordingResult = await this.recorder.stop();
 				const audioDir = this.plugin.settings.transcriber.audioDir;
 				const audioPath = await this.fileService.saveRecording(result.blob, audioDir);
 				new Notice(`Recording saved to ${audioPath}`);
 
-				// Extract base name (timestamp) from audio filename
 				const audioFileName = audioPath.substring(audioPath.lastIndexOf('/') + 1);
 				const baseName = audioFileName.replace(/\.[^/.]+$/, '');
-
-				// Transcribe audio
-				this.plugin.updateStatus('AI Transcribing...');
-				new Notice('Transcribing audio…');
-				const transcript = await this.plugin.transcriber.transcribe(result.blob, this.plugin.settings.transcriber);
 				const transcriptDir = this.plugin.settings.transcriber.transcriptDir;
-				// Handle transcript saving and optional editing
-				const dir = transcriptDir;
+
 				if (this.plugin.settings.editor.enabled) {
-					this.plugin.updateStatus('AI Editing...');
-					if (this.plugin.settings.editor.keepOriginal) {
-						// Save raw transcript with custom name
-						const rawFileName = `${baseName}_raw_transcript.md`;
-						const rawPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
-						new Notice(`Transcript saved to ${rawPath}`);
-					}
-					new Notice('Editing transcript…');
-					const edited = await this.plugin.editorService.edit(transcript, this.plugin.settings.editor);
-					// Save edited transcript with custom name
-					const editedFileName = `${baseName}_edited_transcript.md`;
-					const editedPath = await this.fileService.saveTextWithName(edited, dir, editedFileName);
-					new Notice(`Edited transcript saved to ${editedPath}`);
-					await this.fileService.openFile(editedPath);
-					this.plugin.updateStatus('Transcriber Idle');
+					new SystemPromptTemplateSelectionModal(this.app, this.plugin, async (selectedTemplateName) => {
+						if (!selectedTemplateName) {
+							new Notice('Template selection cancelled. Audio saved, transcription aborted.');
+							this.plugin.updateStatus('Transcriber Idle');
+							this.close();
+							return;
+						}
+
+						const selectedTemplate = this.plugin.settings.editor.systemPromptTemplates.find(t => t.name === selectedTemplateName);
+						if (!selectedTemplate) {
+							new Notice('Selected template not found. Audio saved, transcription aborted.');
+							this.plugin.updateStatus('Transcriber Idle');
+							this.close();
+							return;
+						}
+
+						// Proceed with transcription and editing
+						try {
+							this.plugin.updateStatus('AI Transcribing...');
+							new Notice('Transcribing audio…');
+							const transcript = await this.plugin.transcriber.transcribe(result.blob, this.plugin.settings.transcriber);
+
+							this.plugin.updateStatus('AI Editing...');
+							if (this.plugin.settings.editor.keepOriginal) {
+								const rawFileName = `${baseName}_raw_transcript.md`;
+								const rawPath = await this.fileService.saveTextWithName(transcript, transcriptDir, rawFileName);
+								new Notice(`Raw transcript saved to ${rawPath}`);
+							}
+							new Notice('Editing transcript with AI using template: ' + selectedTemplateName);
+							const edited = await this.plugin.editorService.edit(transcript, this.plugin.settings.editor, selectedTemplate.prompt);
+							const editedFileName = `${baseName}_edited_transcript.md`;
+							const editedPath = await this.fileService.saveTextWithName(edited, transcriptDir, editedFileName);
+							new Notice(`Edited transcript saved to ${editedPath}`);
+							await this.fileService.openFile(editedPath);
+						} catch (e) {
+							new Notice(`Error during transcription/editing: ${(e as Error).message}`);
+							console.error('Error during transcription/editing:', e);
+						} finally {
+							this.plugin.updateStatus('Transcriber Idle');
+							this.close();
+						}
+					}).open();
 				} else {
-					// Save raw transcript with custom name (no editing)
-					const rawFileName = `${baseName}_raw_transcript.md`;
-					const transcriptPath = await this.fileService.saveTextWithName(transcript, dir, rawFileName);
-					new Notice(`Transcript saved to ${transcriptPath}`);
-					await this.fileService.openFile(transcriptPath);
-					this.plugin.updateStatus('Transcriber Idle');
+					// Editor is not enabled, just transcribe and save raw
+					try {
+						this.plugin.updateStatus('AI Transcribing...');
+						new Notice('Transcribing audio…');
+						const transcript = await this.plugin.transcriber.transcribe(result.blob, this.plugin.settings.transcriber);
+						const rawFileName = `${baseName}_raw_transcript.md`;
+						const transcriptPath = await this.fileService.saveTextWithName(transcript, transcriptDir, rawFileName);
+						new Notice(`Transcript saved to ${transcriptPath}`);
+						await this.fileService.openFile(transcriptPath);
+					} catch (e) {
+						new Notice(`Error during transcription: ${(e as Error).message}`);
+						console.error('Error during transcription:', e);
+					} finally {
+						this.plugin.updateStatus('Transcriber Idle');
+						this.close(); // Ensure modal closes
+					}
 				}
-			} catch (error: unknown) {
+			} catch (error: unknown) { // Outer catch for errors during recorder.stop() or fileService.saveRecording()
 				new Notice(`Error: ${(error as Error).message}`);
 				console.error(error);
 				this.plugin.updateStatus('Transcriber Idle');
-			} finally {
 				this.close();
 			}
 		};
