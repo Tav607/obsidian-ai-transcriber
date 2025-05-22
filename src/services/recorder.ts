@@ -30,7 +30,7 @@ export class RecorderService {
 		};
 
 		// Initialize AudioContext and AnalyserNode for visualization
-		const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
+		const AudioContextConstructor = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 		if (AudioContextConstructor) {
 			this.audioContext = new AudioContextConstructor();
 			this.sourceNode = this.audioContext.createMediaStreamSource(this.stream);

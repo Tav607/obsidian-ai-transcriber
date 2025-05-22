@@ -3,7 +3,7 @@ import RecordModal from './src/ui/recordModal';
 import { RecorderService } from './src/services/recorder';
 import { FileService } from './src/services/file';
 import SettingsTab from './src/settings/settingsTab';
-import { PluginSettings, DEFAULT_SETTINGS, SystemPromptTemplate } from './src/settings/types';
+import { PluginSettings, DEFAULT_SETTINGS } from './src/settings/types';
 import { TranscriberService } from './src/services/transcriber';
 import { EditorService } from './src/services/editor';
 import { SystemPromptTemplateSelectionModal } from './src/ui/SystemPromptTemplateSelectionModal';

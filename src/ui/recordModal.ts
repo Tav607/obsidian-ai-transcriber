@@ -290,7 +290,7 @@ export default class RecordModal extends Modal {
 		if (this.animationFrameId === null && this.canvasCtx) {
 			// Ensure analyser is available via recorder service
 			if (this.recorder.getAnalyserNode()) {
-				 this.animationFrameId = requestAnimationFrame(this.visualizeAudio.bind(this));
+				this.animationFrameId = requestAnimationFrame(this.visualizeAudio.bind(this));
 			} else {
 				console.warn("AnalyserNode not available, cannot start visualization.");
 				this.clearWaveformCanvas();

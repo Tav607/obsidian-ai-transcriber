@@ -1,6 +1,5 @@
-import { App, Modal, Setting, DropdownComponent } from 'obsidian';
+import { App, Modal, Setting } from 'obsidian';
 import ObsidianAITranscriber from '../../main';
-import { SystemPromptTemplate } from '../settings/types';
 
 export class SystemPromptTemplateSelectionModal extends Modal {
     plugin: ObsidianAITranscriber;
@@ -35,13 +34,10 @@ export class SystemPromptTemplateSelectionModal extends Modal {
             return;
         }
         
-        let dropdownComponent: DropdownComponent;
-
         new Setting(contentEl)
             .setName('Template')
             .setDesc('Choose a system prompt template for the editor.')
             .addDropdown(dropdown => {
-                dropdownComponent = dropdown;
                 templates.forEach(template => {
                     dropdown.addOption(template.name, template.name);
                 });
