@@ -90,31 +90,6 @@ export default class SettingsTab extends PluginSettingTab {
 				})
 			);
 		new Setting(containerEl)
-			.setName('Prompt')
-			.setDesc('Optional: Add words with their correct spellings to help with transcription.')
-			.addTextArea(textArea => textArea
-				.setPlaceholder('Clarify uncommon words or phrases in the transcript.')
-				.setValue(this.plugin.settings.transcriber.prompt)
-				.onChange(async (value) => {
-					this.plugin.settings.transcriber.prompt = value;
-					await this.plugin.saveSettings();
-				})
-			);
-		new Setting(containerEl)
-			.setName('Temperature')
-			.setDesc('Enter a value between 0.0 and 1.0. Suggested value: 0.2.')
-			.addText(text => text
-				.setPlaceholder('0.0-1.0')
-				.setValue(this.plugin.settings.transcriber.temperature.toString())
-				.onChange(async (value) => {
-					const num = parseFloat(value);
-					if (!isNaN(num) && num >= 0 && num <= 1) {
-						this.plugin.settings.transcriber.temperature = num;
-						await this.plugin.saveSettings();
-					}
-				})
-			);
-		new Setting(containerEl)
 			.setName('Audio Directory')
 			.setDesc('Where to save recordings (relative to vault root)')
 			.addText(text => text

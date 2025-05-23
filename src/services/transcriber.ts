@@ -1,7 +1,39 @@
 import OpenAI from "openai";
+import { GoogleGenAI } from "@google/genai";
 
-interface GeminiContentPart {
-	text?: string;
+// Utility class to limit concurrency
+class ConcurrencyLimiter {
+	private running = 0;
+	private queue: Array<() => Promise<void>> = [];
+
+	constructor(private limit: number) {}
+
+	async run<T>(fn: () => Promise<T>): Promise<T> {
+		return new Promise((resolve, reject) => {
+			this.queue.push(async () => {
+				try {
+					this.running++;
+					const result = await fn();
+					resolve(result);
+				} catch (error) {
+					reject(error);
+				} finally {
+					this.running--;
+					this.processQueue();
+				}
+			});
+			this.processQueue();
+		});
+	}
+
+	private processQueue() {
+		if (this.running < this.limit && this.queue.length > 0) {
+			const task = this.queue.shift();
+			if (task) {
+				task();
+			}
+		}
+	}
 }
 
 export class TranscriberService {
@@ -28,6 +60,25 @@ export class TranscriberService {
 	}
 
 	/**
+	 * Clean up repetitive characters in transcription result
+	 * Remove sequences where the same character repeats more than a threshold
+	 */
+	private cleanupRepetitiveCharacters(text: string, maxRepeats = 10): string {
+		if (!text || text.length === 0) return text;
+		
+		// Use regex to find and replace repetitive characters
+		// This pattern matches any character (including Chinese characters) repeated more than maxRepeats times
+		const pattern = new RegExp(`(.)\\1{${maxRepeats},}`, 'g');
+		
+		const cleanedText = text.replace(pattern, (match, char) => {
+			console.log(`🧹 Found repetitive character "${char}" repeated ${match.length} times, cleaning to single occurrence`);
+			return char; // Replace with single character
+		});
+		
+		return cleanedText;
+	}
+
+	/**
 	 * Transcribe audio blob using OpenAI or Gemini API based on settings.
 	 * @param blob Audio blob to transcribe
 	 * @param settings TranscriberSettings from plugin configuration
@@ -36,83 +87,153 @@ export class TranscriberService {
 		if (!settings.apiKey) {
 			throw new Error('Transcriber API key is not configured');
 		}
+
+		console.log('🎵 Starting audio transcription processing...');
+		const overallStartTime = Date.now();
+
+		// Preprocess audio
+		console.log('🔄 Preprocessing audio...');
+		const preprocessStartTime = Date.now();
+		const chunks = await this.preprocess(blob);
+		const preprocessTime = (Date.now() - preprocessStartTime) / 1000;
+		console.log(`✅ Preprocessing completed, generated ${chunks.length} audio chunks, time: ${preprocessTime.toFixed(2)}s`);
+
+		// Create concurrency limiter with max 6 parallel requests
+		const concurrencyLimiter = new ConcurrencyLimiter(6);
+		let fullText = '';
+
 		// Handle OpenAI transcription
 		if (settings.provider === 'openai') {
+			console.log('🔄 Transcribing audio using OpenAI...');
+			const transcriptionStartTime = Date.now();
+			
 			// Use OpenAI SDK for transcription
 			const openai = new OpenAI({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true });
-			const chunks = await this.preprocess(blob);
-			let fullText = '';
-			for (const chunk of chunks) {
-				const transcription = await openai.audio.transcriptions.create({
-					file: new File([chunk], 'audio.wav', { type: 'audio/wav' }),
-					model: settings.model,
-					response_format: 'text',
-					...(settings.prompt ? { prompt: settings.prompt } : {}),
-				});
-				fullText += transcription;
-			}
-			return fullText;
+			
+			// Process all chunks in parallel with index tracking
+			const transcriptionPromises = chunks.map((chunk, index) =>
+				concurrencyLimiter.run(async () => {
+					console.log(`⏳ Processing chunk ${index + 1}/${chunks.length}...`);
+					const chunkStartTime = Date.now();
+					
+					const transcription = await openai.audio.transcriptions.create({
+						file: new File([chunk], `audio_chunk_${index}.wav`, { type: 'audio/wav' }),
+						model: settings.model,
+						response_format: 'text',
+					});
+					
+					const chunkTime = (Date.now() - chunkStartTime) / 1000;
+					console.log(`✅ Chunk ${index + 1} completed, time: ${chunkTime.toFixed(2)}s, text length: ${transcription.length}`);
+					
+					return { index, text: transcription };
+				})
+			);
+
+			const results = await Promise.all(transcriptionPromises);
+			
+			// Sort by index to maintain order and join
+			const sortedTranscriptions = results.sort((a, b) => a.index - b.index);
+			fullText = sortedTranscriptions.map(r => r.text).join(' ');
+			
+			const transcriptionTime = (Date.now() - transcriptionStartTime) / 1000;
+			console.log(`✅ OpenAI transcription completed, time: ${transcriptionTime.toFixed(2)}s`);
 		}
 
 		// Handle Gemini transcription
 		if (settings.provider === 'gemini') {
-			const chunks = await this.preprocess(blob);
-			let fullText = '';
+			console.log('🔄 Transcribing audio using Gemini...');
+			const transcriptionStartTime = Date.now();
+			
+			// Use @google/genai SDK
+			const genai = new GoogleGenAI({ apiKey: settings.apiKey });
 
-			for (const chunk of chunks) {
-				const base64Audio = await this.blobToBase64(chunk);
-				// Use native generateContent endpoint for audio transcription
-				const url = `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`;
-				const restRequestBody = {
-					contents: [{
-						parts: [
-							{ text: settings.prompt || "Transcribe this audio. If the language is Chinese, please use Simplified Chinese characters. Provide only the direct transcription text without any introductory phrases." },
-							{ inline_data: { mime_type: 'audio/wav', data: base64Audio } },
+			// Process all chunks in parallel with index tracking
+			const transcriptionPromises = chunks.map((chunk, index) =>
+				concurrencyLimiter.run(async () => {
+					console.log(`⏳ Processing chunk ${index + 1}/${chunks.length}...`);
+					const chunkStartTime = Date.now();
+					
+					const base64Audio = await this.blobToBase64(chunk);
+					
+					const response = await genai.models.generateContent({
+						model: settings.model,
+						contents: [
+							{
+								parts: [
+									{ text: "Transcribe this audio. If the language is Chinese, please use Simplified Chinese characters. Provide only the direct transcription text without any introductory phrases." },
+									{ 
+										inlineData: { 
+											mimeType: 'audio/wav', 
+											data: base64Audio 
+										} 
+									},
+								],
+							}
 						],
-					}],
-					generationConfig: {
-						temperature: settings.temperature,
-					}
-				};
-				const response = await fetch(url, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify(restRequestBody),
-				});
-				if (!response.ok) {
-					const errorText = await response.text();
-					throw new Error(`Gemini Transcription error: ${response.status} ${errorText}`);
-				}
+						config: {
+							thinkingConfig: {
+								thinkingBudget: 0
+							}
+						}
+					});
+					
+					const chunkTime = (Date.now() - chunkStartTime) / 1000;
+					console.log(`✅ Chunk ${index + 1} completed, time: ${chunkTime.toFixed(2)}s, text length: ${(response.text || '').length}`);
+					
+					return { index, text: response.text || '' };
+				})
+			);
 
-				const responseData = await response.json();
-				// Parse native generateContent response structure
-				if (responseData.candidates && responseData.candidates.length > 0 && responseData.candidates[0].content && responseData.candidates[0].content.parts) {
-					fullText += responseData.candidates[0].content.parts.map((part: GeminiContentPart) => part.text || '').join('');
-				} else {
-					console.warn('Gemini generateContent response structure unexpected:', responseData);
-					throw new Error('Gemini Transcription error: Unexpected response structure.');
-				}
-			}
-			return fullText;
+			const results = await Promise.all(transcriptionPromises);
+			
+			// Sort by index to maintain order and join
+			const sortedTranscriptions = results.sort((a, b) => a.index - b.index);
+			fullText = sortedTranscriptions.map(r => r.text).join(' ');
+			
+			const transcriptionTime = (Date.now() - transcriptionStartTime) / 1000;
+			console.log(`✅ Gemini transcription completed, time: ${transcriptionTime.toFixed(2)}s`);
 		}
 
-		throw new Error(`Unsupported transcription provider: ${settings.provider}`);
+		if (settings.provider !== 'openai' && settings.provider !== 'gemini') {
+			throw new Error(`Unsupported transcription provider: ${settings.provider}`);
+		}
+
+		// Clean up repetitive characters
+		console.log('🧹 Cleaning up repetitive characters...');
+		const beforeCleanup = fullText.length;
+		fullText = this.cleanupRepetitiveCharacters(fullText);
+		const afterCleanup = fullText.length;
+		const cleanupReduction = beforeCleanup - afterCleanup;
+		if (cleanupReduction > 0) {
+			console.log(`✅ Cleanup completed. Removed ${cleanupReduction} repetitive characters (${(cleanupReduction / beforeCleanup * 100).toFixed(1)}%)`);
+		} else {
+			console.log(`✅ Cleanup completed. No repetitive characters found.`);
+		}
+
+		const totalTime = (Date.now() - overallStartTime) / 1000;
+		console.log(`🎉 Transcription process completed! Total time: ${totalTime.toFixed(2)}s`);
+
+		return fullText;
 	}
 
-	// Preprocess audio: decode, resample to 16k mono and chunk into ≤10min WAV blobs
+	// Generate silence audio for specified duration
+	private generateSilence(sampleRate: number, durationSeconds: number): Float32Array {
+		const samples = Math.floor(sampleRate * durationSeconds);
+		return new Float32Array(samples); // All zeros, which means silence
+	}
+
+	// Preprocess audio: decode, resample to 16k mono and chunk into ≤5min WAV blobs
 	private async preprocess(blob: Blob, maxSecsInput?: number): Promise<Blob[]> {
 		const TARGET_SAMPLE_RATE = 16000;
-		const MAX_CHUNK_SECONDS = maxSecsInput ?? 600; // Default to 10 minutes (600s) if not provided
+		const MAX_CHUNK_SECONDS = maxSecsInput ?? 300; // 300 seconds (5 minutes)
+		const OVERLAP_SECONDS = 2; // 2 seconds overlap to prevent sentence cutoff
+		const OVERLAP_SAMPLES = Math.floor(OVERLAP_SECONDS * TARGET_SAMPLE_RATE);
 		const SILENCE_THRESHOLD = 0.01;
 		const MIN_SILENCE_DURATION_SECONDS = 2;
 		const MIN_SILENCE_TRIM_SAMPLES = Math.floor(MIN_SILENCE_DURATION_SECONDS * TARGET_SAMPLE_RATE);
-		const CHUNK_SPLIT_SILENCE_WINDOW_SECONDS = 0.3;
-		const CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES = Math.floor(CHUNK_SPLIT_SILENCE_WINDOW_SECONDS * TARGET_SAMPLE_RATE);
-		const CHUNK_SPLIT_SEARCH_RANGE_SECONDS = 5;
-		const CHUNK_SPLIT_SEARCH_RANGE_SAMPLES = Math.floor(CHUNK_SPLIT_SEARCH_RANGE_SECONDS * TARGET_SAMPLE_RATE);
-		const MIN_CHUNK_DURATION_SECONDS = 1;
+		const REPLACEMENT_SILENCE_DURATION = 1; // Replace with 1 second silence
+		const MIN_CHUNK_DURATION_SECONDS = 2;
 		const MIN_CHUNK_SAMPLES = Math.floor(MIN_CHUNK_DURATION_SECONDS * TARGET_SAMPLE_RATE);
-
 
 		const arrayBuffer = await blob.arrayBuffer();
 		const AudioContextConstructor = window.AudioContext || (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -148,93 +269,122 @@ export class TranscriberService {
 		source.connect(offlineCtx.destination);
 		source.start();
 		const resampled = await offlineCtx.startRendering();
-		// Silence trimming: remove continuous silent segments longer than MIN_SILENCE_DURATION_SECONDS
+		
+		// Modified silence processing logic: replace long silence with 1 second silence instead of removing
 		const rawData = resampled.getChannelData(0);
-		// const silenceThreshold = 0.01; // Replaced by SILENCE_THRESHOLD
-		// const minSilenceTrimSamples = Math.floor(2 * TARGET_SAMPLE_RATE); // Replaced by MIN_SILENCE_TRIM_SAMPLES
-
-		// Optimized silence trimming to avoid large intermediate arrays
-		let samplesToKeep = 0;
-		let currentSilentCountForCounting = 0;
-		for (let i = 0; i < rawData.length; i++) {
-			const sample = rawData[i];
-			if (Math.abs(sample) <= SILENCE_THRESHOLD) {
-				currentSilentCountForCounting++;
+		const replacementSilence = this.generateSilence(TARGET_SAMPLE_RATE, REPLACEMENT_SILENCE_DURATION);
+		
+		// Calculate processed data length
+		let processedLength = 0;
+		let currentSilentCount = 0;
+		let i = 0;
+		
+		while (i < rawData.length) {
+			if (Math.abs(rawData[i]) <= SILENCE_THRESHOLD) {
+				currentSilentCount++;
+				i++;
 			} else {
-				if (currentSilentCountForCounting > 0 && currentSilentCountForCounting < MIN_SILENCE_TRIM_SAMPLES) {
-					samplesToKeep += currentSilentCountForCounting; // Keep the short silence
+				if (currentSilentCount >= MIN_SILENCE_TRIM_SAMPLES) {
+					// Long silence: replace with 1 second silence
+					processedLength += replacementSilence.length;
+				} else {
+					// Short silence: keep as is
+					processedLength += currentSilentCount;
 				}
-				currentSilentCountForCounting = 0;
-				samplesToKeep++; // Keep the current non-silent sample
+				currentSilentCount = 0;
+				processedLength++; // Current non-silent sample
+				i++;
 			}
 		}
-		// Note: Trailing silence (short or long) is implicitly dropped by this logic,
-		// matching the original behavior where the loop ended without adding trailing short silence.
+		
+		// Handle trailing silence
+		if (currentSilentCount >= MIN_SILENCE_TRIM_SAMPLES) {
+			processedLength += replacementSilence.length;
+		} else {
+			processedLength += currentSilentCount;
+		}
 
-		const data = new Float32Array(samplesToKeep);
-		let currentIndex = 0;
-		let currentSilentCountForFilling = 0;
-		for (let i = 0; i < rawData.length; i++) {
-			const sample = rawData[i];
-			if (Math.abs(sample) <= SILENCE_THRESHOLD) {
-				currentSilentCountForFilling++;
+		// Create processed data
+		const data = new Float32Array(processedLength);
+		let writeIndex = 0;
+		currentSilentCount = 0;
+		i = 0;
+		
+		while (i < rawData.length) {
+			if (Math.abs(rawData[i]) <= SILENCE_THRESHOLD) {
+				currentSilentCount++;
+				i++;
 			} else {
-				if (currentSilentCountForFilling > 0 && currentSilentCountForFilling < MIN_SILENCE_TRIM_SAMPLES) {
-					for (let j = i - currentSilentCountForFilling; j < i; j++) {
-						data[currentIndex++] = rawData[j];
+				if (currentSilentCount >= MIN_SILENCE_TRIM_SAMPLES) {
+					// Long silence: write 1 second silence
+					for (let j = 0; j < replacementSilence.length; j++) {
+						data[writeIndex++] = replacementSilence[j];
+					}
+				} else {
+					// Short silence: write original silence
+					for (let j = i - currentSilentCount; j < i; j++) {
+						data[writeIndex++] = rawData[j];
 					}
 				}
-				currentSilentCountForFilling = 0;
-				data[currentIndex++] = sample;
+				currentSilentCount = 0;
+				data[writeIndex++] = rawData[i]; // Write current non-silent sample
+				i++;
 			}
 		}
-		// `data` is now the trimmed Float32Array
+		
+		// Handle trailing silence
+		if (currentSilentCount >= MIN_SILENCE_TRIM_SAMPLES) {
+			for (let j = 0; j < replacementSilence.length; j++) {
+				data[writeIndex++] = replacementSilence[j];
+			}
+		} else {
+			for (let j = i - currentSilentCount; j < i; j++) {
+				data[writeIndex++] = rawData[j];
+			}
+		}
 
+		// Simple time-based chunking with overlap
 		const maxSamples = MAX_CHUNK_SECONDS * TARGET_SAMPLE_RATE;
 		const totalSamples = data.length;
-		// const silenceWindowSamples = Math.floor(0.3 * TARGET_SAMPLE_RATE); // Replaced by CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES
-		// const searchRangeSamples = Math.floor(5 * TARGET_SAMPLE_RATE);      // Replaced by CHUNK_SPLIT_SEARCH_RANGE_SAMPLES
-		const audioCtxForChunking = new AudioContextConstructor(); // Use the same constructor for consistency
+		const totalDuration = totalSamples / TARGET_SAMPLE_RATE;
+		const audioCtxForChunking = new AudioContextConstructor();
 		const chunks: Blob[] = [];
+		let chunkIndex = 0;
+		
+		console.log(`🔄 Splitting audio into chunks: ${totalDuration.toFixed(2)}s total, ${maxSamples} samples per chunk, ${OVERLAP_SECONDS}s overlap`);
+		
 		let startSample = 0;
-		// const minChunkSamples = TARGET_SAMPLE_RATE; // discard segments shorter than 1s - Replaced by MIN_CHUNK_SAMPLES
 		while (startSample < totalSamples) {
-			let endSample = Math.min(startSample + maxSamples, totalSamples);
-			if (endSample < totalSamples) {
-				let splitPoint: number | null = null;
-				const desiredSplit = endSample;
-				// search backward for a silent region
-				const backwardStart = Math.max(CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES, desiredSplit - CHUNK_SPLIT_SEARCH_RANGE_SAMPLES);
-				for (let i = desiredSplit; i >= backwardStart; i--) {
-					let silent = true;
-					for (let j = i - CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES; j < i; j++) {
-						if (Math.abs(data[j]) > SILENCE_THRESHOLD) { silent = false; break; }
-					}
-					if (silent) { splitPoint = i - CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES; break; }
-				}
-				// if no silent point before, search forward
-				if (splitPoint === null) {
-					const forwardEnd = Math.min(totalSamples, desiredSplit + CHUNK_SPLIT_SEARCH_RANGE_SAMPLES);
-					for (let i = desiredSplit; i < forwardEnd; i++) {
-						let silent = true;
-						for (let j = i; j < i + CHUNK_SPLIT_SILENCE_WINDOW_SAMPLES && j < totalSamples; j++) {
-							if (Math.abs(data[j]) > SILENCE_THRESHOLD) { silent = false; break; }
-						}
-						if (silent) { splitPoint = i; break; }
-					}
-				}
-				if (splitPoint !== null && splitPoint > startSample) {
-					endSample = splitPoint;
-				}
+			// Calculate end sample for this chunk
+			const endSample = Math.min(startSample + maxSamples, totalSamples);
+			
+			// For chunks after the first one, include overlap from previous chunk
+			let chunkStartSample = startSample;
+			if (chunkIndex > 0) {
+				chunkStartSample = Math.max(0, startSample - OVERLAP_SAMPLES);
 			}
-			const segmentBuf = audioCtxForChunking.createBuffer(1, endSample - startSample, TARGET_SAMPLE_RATE);
-			segmentBuf.getChannelData(0).set(data.subarray(startSample, endSample));
-			const segmentSamples = endSample - startSample;
+			
+			const segmentSamples = endSample - chunkStartSample;
+			const segmentDurationSeconds = segmentSamples / TARGET_SAMPLE_RATE;
+			
+			// Only create chunk if it meets minimum duration
 			if (segmentSamples >= MIN_CHUNK_SAMPLES) {
+				const segmentBuf = audioCtxForChunking.createBuffer(1, segmentSamples, TARGET_SAMPLE_RATE);
+				segmentBuf.getChannelData(0).set(data.subarray(chunkStartSample, endSample));
 				chunks.push(this.bufferToWav(segmentBuf));
+				
+				const overlapInfo = chunkIndex > 0 ? ` (includes ${OVERLAP_SECONDS}s overlap)` : '';
+				console.log(`📦 Created chunk ${chunkIndex + 1}: ${segmentDurationSeconds.toFixed(2)}s ${overlapInfo}`);
+				chunkIndex++;
+			} else {
+				console.log(`⚠️ Skipping short chunk: ${segmentDurationSeconds.toFixed(2)}s (samples ${chunkStartSample}-${endSample})`);
 			}
+			
+			// Move to next chunk position (without overlap for the start calculation)
 			startSample = endSample;
 		}
+		
+		console.log(`✅ Audio splitting completed: ${chunks.length} chunks created with ${OVERLAP_SECONDS}s overlap between chunks`);
 		return chunks;
 	}
 
