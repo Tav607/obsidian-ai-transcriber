@@ -113,7 +113,7 @@ export default class ObsidianAITranscriber extends Plugin {
 		// Context menu for audio files
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
-				if (file instanceof TFile && (file.extension === 'webm' || file.extension === 'm4a' || file.extension === 'mp3')) {
+				if (file instanceof TFile && (file.extension === 'webm' || file.extension === 'm4a' || file.extension === 'mp3' || file.extension === 'wav')) {
 					menu.addItem((item) => {
 						item.setTitle('Transcribe with AI')
 							.setIcon('microphone')
@@ -127,6 +127,7 @@ export default class ObsidianAITranscriber extends Plugin {
 										if (file.extension === 'm4a') mime = 'audio/mp4';
 										else if (file.extension === 'webm') mime = 'audio/webm';
 										else if (file.extension === 'mp3') mime = 'audio/mpeg';
+										else if (file.extension === 'wav') mime = 'audio/wav';
 										const blob = new Blob([arrayBuffer], { type: mime });
 										const transcript = await this.transcriber.transcribe(blob, this.settings.transcriber);
 										const dir = this.settings.transcriber.transcriptDir;
