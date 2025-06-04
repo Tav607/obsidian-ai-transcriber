@@ -8,8 +8,6 @@ import { TranscriberService } from './src/services/transcriber';
 import { EditorService } from './src/services/editor';
 import { SystemPromptTemplateSelectionModal } from './src/ui/SystemPromptTemplateSelectionModal';
 
-// Remember to rename these classes and interfaces!
-
 export default class ObsidianAITranscriber extends Plugin {
 	settings: PluginSettings;
 	recorder: RecorderService;
