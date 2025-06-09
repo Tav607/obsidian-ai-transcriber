@@ -1,4 +1,4 @@
-import { Editor, MarkdownView, Notice, Plugin, TFile } from 'obsidian';
+import { MarkdownView, Notice, Plugin, TFile } from 'obsidian';
 import RecordModal from './src/ui/recordModal';
 import { RecorderService } from './src/services/recorder';
 import { FileService } from './src/services/file';
@@ -49,59 +49,67 @@ export default class ObsidianAITranscriber extends Plugin {
 		this.addCommand({
 			id: 'obsidian-ai-transcriber-edit-transcript',
 			name: 'Edit Current Transcript with AI',
-			editorCallback: async (editor: Editor, view: MarkdownView) => {
-				const file = view.file;
-				if (!file || file.extension !== 'md') {
-					new Notice('Please open a Markdown file to edit.');
-					return;
-				}
+			checkCallback: (checking: boolean) => {
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (view) {
+					if (!checking) {
+						const file = view.file;
+						if (!file || file.extension !== 'md') {
+							new Notice('Please open a Markdown file to edit.');
+							return;
+						}
 
-				const originalText = editor.getValue();
-				if (!originalText.trim()) {
-					new Notice('The file is empty.');
-					return;
-				}
+						(async () => {
+							const originalText = view.editor ? view.editor.getValue() : await this.app.vault.read(file);
 
-				if (!this.settings.editor.enabled) {
-					new Notice('AI Editor is not enabled in settings. Editing skipped.');
-					// If editor is not enabled, we might not want to proceed or just treat original as final.
-					// For now, let's assume the command is specifically for AI editing.
-					return;
-				}
+							if (!originalText.trim()) {
+								new Notice('The file is empty.');
+								return;
+							}
 
-				// Show template selection modal
-				new SystemPromptTemplateSelectionModal(this.app, this, async (selectedTemplateName) => {
-					if (!selectedTemplateName) {
-						new Notice('Template selection cancelled. Editing aborted.');
-						return;
+							if (!this.settings.editor.enabled) {
+								new Notice('AI Editor is not enabled in settings. Editing skipped.');
+								return;
+							}
+
+							// Show template selection modal
+							new SystemPromptTemplateSelectionModal(this.app, this, async (selectedTemplateName) => {
+								if (!selectedTemplateName) {
+									new Notice('Template selection cancelled. Editing aborted.');
+									return;
+								}
+
+								const selectedTemplate = this.settings.editor.systemPromptTemplates.find(t => t.name === selectedTemplateName);
+								if (!selectedTemplate) {
+									new Notice('Selected template not found. Editing aborted.');
+									return;
+								}
+
+								this.updateStatus('AI Editing...');
+								new Notice('Editing transcript with AI using template: ' + selectedTemplateName);
+
+								try {
+									const editedText = await this.editorService.edit(originalText, this.settings.editor, selectedTemplate.prompt);
+									const dir = file.parent ? file.parent.path : this.settings.transcriber.transcriptDir;
+									const baseName = file.basename.replace(/_raw_transcript$/, '').replace(/_edited_transcript$/, '');
+									
+									const editedFileName = `${baseName}_edited_transcript.md`;
+									const editedPath = await this.fileService.saveTextWithName(editedText, dir, editedFileName);
+									
+									new Notice(`Edited transcript saved to ${editedPath}`);
+									await this.fileService.openFile(editedPath);
+								} catch (error: unknown) {
+									new Notice(`Error editing transcript: ${(error as Error).message}`);
+									console.error('Error editing transcript:', error);
+								} finally {
+									this.updateStatus('Transcriber Idle');
+								}
+							}).open();
+						})();
 					}
-
-					const selectedTemplate = this.settings.editor.systemPromptTemplates.find(t => t.name === selectedTemplateName);
-					if (!selectedTemplate) {
-						new Notice('Selected template not found. Editing aborted.');
-						return;
-					}
-
-					this.updateStatus('AI Editing...');
-					new Notice('Editing transcript with AI using template: ' + selectedTemplateName);
-
-					try {
-						const editedText = await this.editorService.edit(originalText, this.settings.editor, selectedTemplate.prompt);
-						const dir = file.parent ? file.parent.path : this.settings.transcriber.transcriptDir;
-						const baseName = file.basename.replace(/_raw_transcript$/, '').replace(/_edited_transcript$/, '');
-						
-						const editedFileName = `${baseName}_edited_transcript.md`;
-						const editedPath = await this.fileService.saveTextWithName(editedText, dir, editedFileName);
-						
-						new Notice(`Edited transcript saved to ${editedPath}`);
-						await this.fileService.openFile(editedPath);
-					} catch (error: unknown) {
-						new Notice(`Error editing transcript: ${(error as Error).message}`);
-						console.error('Error editing transcript:', error);
-					} finally {
-						this.updateStatus('Transcriber Idle');
-					}
-				}).open();
+					return true;
+				}
+				return false;
 			}
 		});
 

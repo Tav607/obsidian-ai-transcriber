@@ -10,7 +10,7 @@ export class SystemPromptTemplateSelectionModal extends Modal {
         super(app);
         this.plugin = plugin;
         this.onSubmit = onSubmit;
-        this.selectedName = plugin.settings.editor.activeSystemPromptTemplateName; // Default to current active
+        this.selectedName = 'Default';
     }
 
     onOpen() {
