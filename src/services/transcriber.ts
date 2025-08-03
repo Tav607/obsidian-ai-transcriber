@@ -170,11 +170,6 @@ export class TranscriberService {
 								],
 							}
 						],
-						config: {
-							thinkingConfig: {
-								thinkingBudget: 0
-							}
-						}
 					});
 					
 					const chunkTime = (Date.now() - chunkStartTime) / 1000;
